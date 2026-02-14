@@ -2,6 +2,10 @@
 
 Local GUI to run long-lived dev services per project, with real PTY terminals in the browser.
 
+## Product direction
+
+- Vision brief: [`docs/VISION.md`](docs/VISION.md)
+
 ## What it does
 - Add multiple projects by path.
 - Each project reads a `.devrun.yml` config file.

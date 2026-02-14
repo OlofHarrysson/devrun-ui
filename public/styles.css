@@ -1,0 +1,273 @@
+:root {
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --panel-soft: #f9fafb;
+  --line: #e5e7eb;
+  --text: #111827;
+  --muted: #6b7280;
+  --brand: #2563eb;
+  --danger: #dc2626;
+  --ok: #16a34a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--text);
+  background: radial-gradient(circle at top right, #dbeafe, #f3f4f6 40%);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.projects {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.project-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--panel-soft);
+  cursor: pointer;
+}
+
+.project-item.active {
+  border-color: var(--brand);
+  background: #eff6ff;
+}
+
+.project-item-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.project-item-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.main {
+  display: grid;
+  grid-template-rows: 44% 56%;
+  min-height: 100vh;
+}
+
+.project-panel,
+.terminal-panel {
+  padding: 14px;
+}
+
+.project-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-header {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.project-title {
+  font-size: 18px;
+  margin: 0;
+}
+
+.project-subtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.services {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: auto;
+}
+
+.service-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.service-row:last-child {
+  border-bottom: none;
+}
+
+.service-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.service-cmd {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.service-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn,
+.btn-soft,
+.btn-danger {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn:hover,
+.btn-soft:hover,
+.btn-danger:hover {
+  border-color: #cbd5e1;
+}
+
+.btn-primary {
+  border-color: #bfdbfe;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.btn-danger {
+  border-color: #fecaca;
+  background: #fee2e2;
+  color: var(--danger);
+}
+
+.status-running {
+  color: var(--ok);
+}
+
+.status-stopped {
+  color: var(--muted);
+}
+
+.terminal-panel {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  min-height: 0;
+}
+
+.terminal-tabs {
+  display: flex;
+  gap: 8px;
+  overflow: auto;
+  padding-bottom: 4px;
+}
+
+.terminal-tab {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.terminal-tab.active {
+  border-color: var(--brand);
+  background: #eff6ff;
+}
+
+.terminal-stack {
+  border: 1px solid #0f172a;
+  border-radius: 10px;
+  background: #0b1020;
+  position: relative;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+.terminal-view {
+  position: absolute;
+  inset: 0;
+  display: none;
+  padding: 8px;
+}
+
+.terminal-view.active {
+  display: block;
+}
+
+.terminal-empty {
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 16px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .main {
+    grid-template-rows: 50% 50%;
+  }
+}

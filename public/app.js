@@ -2,6 +2,7 @@
   const state = {
     projects: [],
     selectedProjectId: null,
+    selectedServiceByProject: new Map(),
     terminals: new Map(),
     activeTerminalKey: null,
     pollHandle: null,
@@ -16,7 +17,7 @@
 
   const projectsEl = document.getElementById("projects");
   const projectHeaderEl = document.getElementById("project-header");
-  const projectServicesEl = document.getElementById("project-services");
+  const commandBarEl = document.getElementById("command-bar");
   const terminalTabsEl = document.getElementById("terminal-tabs");
   const terminalStackEl = document.getElementById("terminal-stack");
   const addProjectBtn = document.getElementById("add-project-btn");
@@ -96,6 +97,22 @@
     return state.projects.find((project) => project.id === state.selectedProjectId) || null;
   }
 
+  function selectedService(project = selectedProject()) {
+    if (!project || !project.services.length || project.configError) {
+      return null;
+    }
+
+    const selectedServiceName = state.selectedServiceByProject.get(project.id);
+    const service =
+      project.services.find((entry) => entry.name === selectedServiceName) || project.services[0];
+
+    if (service) {
+      state.selectedServiceByProject.set(project.id, service.name);
+    }
+
+    return service || null;
+  }
+
   function getProject(projectId) {
     return state.projects.find((project) => project.id === projectId) || null;
   }
@@ -122,6 +139,27 @@
     const stillExists = state.projects.some((project) => project.id === state.selectedProjectId);
     if (!stillExists) {
       state.selectedProjectId = state.projects[0].id;
+    }
+  }
+
+  function ensureSelectedServices() {
+    for (const projectId of Array.from(state.selectedServiceByProject.keys())) {
+      if (!state.projects.some((project) => project.id === projectId)) {
+        state.selectedServiceByProject.delete(projectId);
+      }
+    }
+
+    for (const project of state.projects) {
+      if (project.configError || !project.services.length) {
+        state.selectedServiceByProject.delete(project.id);
+        continue;
+      }
+
+      const selectedName = state.selectedServiceByProject.get(project.id);
+      const selectedStillExists = project.services.some((service) => service.name === selectedName);
+      if (!selectedStillExists) {
+        state.selectedServiceByProject.set(project.id, project.services[0].name);
+      }
     }
   }
 
@@ -427,6 +465,33 @@
     }
   }
 
+  async function openSelectedServiceTerminal(options = {}) {
+    const project = selectedProject();
+    const service = selectedService(project);
+    if (!project || !service) {
+      return;
+    }
+
+    const key = serviceKey(project.id, service.name);
+    const entry = state.terminals.get(key);
+    const isRunning = Boolean(service.running);
+    const alreadyAttached =
+      entry &&
+      state.activeTerminalKey === key &&
+      ((isRunning && (entry.connectionState === "live" || entry.connectionState === "connecting")) ||
+        (!isRunning && entry.connectionState === "stopped"));
+
+    if (alreadyAttached && !options.forceReconnect) {
+      return;
+    }
+
+    await openTerminal(project, service, {
+      forceReconnect: Boolean(options.forceReconnect),
+      freshRun: Boolean(options.freshRun),
+      showSeparator: Boolean(options.showSeparator),
+    });
+  }
+
   function renderProjects() {
     projectsEl.innerHTML = "";
     if (!state.projects.length) {
@@ -444,7 +509,11 @@
       `;
       item.addEventListener("click", () => {
         state.selectedProjectId = project.id;
+        selectedService(project);
         render();
+        openSelectedServiceTerminal().catch((error) => {
+          alert(error.message || "Failed to open terminal");
+        });
       });
       projectsEl.appendChild(item);
     }
@@ -454,7 +523,7 @@
     const project = selectedProject();
     if (!project) {
       projectHeaderEl.innerHTML = "<div class='project-title'>No project selected</div>";
-      projectServicesEl.innerHTML = "";
+      commandBarEl.innerHTML = "<div class='command-empty'>Select a project to start.</div>";
       return;
     }
 
@@ -496,63 +565,104 @@
     projectHeaderEl.appendChild(right);
 
     if (project.configError) {
-      projectServicesEl.innerHTML = `
-        <div class="service-row">
-          <div>
-            <div class="service-name">Project not configured</div>
-            <div class="service-cmd">${escapeHtml(project.configPath)}</div>
-            <div class="error">${escapeHtml(project.configError)}</div>
-          </div>
+      commandBarEl.innerHTML = `
+        <div class="command-empty">
+          <div class="command-empty-title">Project not configured</div>
+          <div class="command-empty-subtitle">${escapeHtml(project.configPath)}</div>
+          <div class="error">${escapeHtml(project.configError)}</div>
         </div>
       `;
       return;
     }
 
     if (!project.services.length) {
-      projectServicesEl.innerHTML =
-        "<div class='service-row'>No services configured yet. Click Configure.</div>";
+      commandBarEl.innerHTML =
+        "<div class='command-empty'>No services configured yet. Click Configure.</div>";
       return;
     }
 
-    projectServicesEl.innerHTML = "";
-    for (const service of project.services) {
-      const row = document.createElement("div");
-      row.className = "service-row";
-      row.innerHTML = `
-        <div>
-          <div class="service-name">${escapeHtml(service.name)}
-            <span class="${service.running ? "status-running" : "status-stopped"}">
-              ${service.running ? "running" : "stopped"}
-            </span>
-          </div>
-          <div class="service-cmd">${escapeHtml(service.cmd)}</div>
-        </div>
-      `;
-
-      const actions = document.createElement("div");
-      actions.className = "service-actions";
-
-      const startBtn = makeButton("Play", "btn-primary", () => onAction("start", project, service));
-      const stopBtn = makeButton("Stop", "btn-danger", () => onAction("stop", project, service));
-      const restartBtn = makeButton("Restart", "btn-soft", () => onAction("restart", project, service));
-      const openBtn = makeButton("Terminal", "btn-soft", () => {
-        openTerminal(project, service, {
-          forceReconnect: false,
-          freshRun: false,
-          showSeparator: false,
-        }).catch((error) => {
-          alert(error.message || "Failed to open terminal");
-        });
-      });
-
-      actions.appendChild(startBtn);
-      actions.appendChild(stopBtn);
-      actions.appendChild(restartBtn);
-      actions.appendChild(openBtn);
-
-      row.appendChild(actions);
-      projectServicesEl.appendChild(row);
+    const service = selectedService(project);
+    if (!service) {
+      commandBarEl.innerHTML =
+        "<div class='command-empty'>No services configured yet. Click Configure.</div>";
+      return;
     }
+
+    commandBarEl.innerHTML = "";
+    const bar = document.createElement("div");
+    bar.className = "command-bar-inner";
+
+    const leftControls = document.createElement("div");
+    leftControls.className = "command-left";
+
+    const servicePicker = document.createElement("label");
+    servicePicker.className = "command-service-picker";
+    servicePicker.textContent = "Service";
+    const select = document.createElement("select");
+    select.className = "command-select";
+    for (const projectService of project.services) {
+      const option = document.createElement("option");
+      option.value = projectService.name;
+      option.textContent = `${projectService.name} (${projectService.running ? "running" : "stopped"})`;
+      select.appendChild(option);
+    }
+    select.value = service.name;
+    select.addEventListener("change", () => {
+      state.selectedServiceByProject.set(project.id, select.value);
+      render();
+      openSelectedServiceTerminal().catch((error) => {
+        alert(error.message || "Failed to open terminal");
+      });
+    });
+    servicePicker.appendChild(select);
+
+    const commandMeta = document.createElement("div");
+    commandMeta.className = "command-meta";
+    commandMeta.innerHTML = `
+      <span class="command-status ${service.running ? "status-running" : "status-stopped"}">
+        ${service.running ? "running" : "stopped"}
+      </span>
+      <code class="command-preview">${escapeHtml(service.cmd)}</code>
+    `;
+
+    leftControls.appendChild(servicePicker);
+    leftControls.appendChild(commandMeta);
+
+    const actions = document.createElement("div");
+    actions.className = "command-actions";
+    const startBtn = makeButton("Start", "btn-primary", () => {
+      const currentProject = getProject(project.id) || project;
+      const currentService = selectedService(currentProject);
+      if (currentService) {
+        onAction("start", currentProject, currentService);
+      }
+    });
+    const stopBtn = makeButton("Stop", "btn-danger", () => {
+      const currentProject = getProject(project.id) || project;
+      const currentService = selectedService(currentProject);
+      if (currentService) {
+        onAction("stop", currentProject, currentService);
+      }
+    });
+    const restartBtn = makeButton("Restart", "btn-soft", () => {
+      const currentProject = getProject(project.id) || project;
+      const currentService = selectedService(currentProject);
+      if (currentService) {
+        onAction("restart", currentProject, currentService);
+      }
+    });
+
+    startBtn.id = "cmd-start-btn";
+    stopBtn.id = "cmd-stop-btn";
+    restartBtn.id = "cmd-restart-btn";
+
+    actions.appendChild(startBtn);
+    actions.appendChild(stopBtn);
+    actions.appendChild(restartBtn);
+
+    bar.appendChild(leftControls);
+    bar.appendChild(actions);
+    commandBarEl.appendChild(bar);
   }
 
   function renderTerminalTabs() {
@@ -575,7 +685,9 @@
       `;
       tab.addEventListener("click", () => {
         state.activeTerminalKey = entry.key;
-        renderTerminalViews();
+        state.selectedProjectId = entry.projectId;
+        state.selectedServiceByProject.set(entry.projectId, entry.serviceName);
+        render();
       });
 
       terminalTabsEl.appendChild(tab);
@@ -739,6 +851,7 @@
     const next = await api.state();
     state.projects = next.projects || [];
     ensureSelectedProject();
+    ensureSelectedServices();
     syncTerminalEntries();
     render();
   }
@@ -769,6 +882,7 @@
 
   async function init() {
     await refreshState();
+    await openSelectedServiceTerminal();
     state.pollHandle = window.setInterval(() => {
       refreshState().catch(() => {
         // keep current UI if polling fails

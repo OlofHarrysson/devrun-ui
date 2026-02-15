@@ -9,8 +9,8 @@ Local GUI to run long-lived dev services per project, with real PTY terminals in
 ## What it does
 - Add multiple projects by path.
 - Store per-project service config in Devrun (no per-repo YAML required).
-- Start/stop/restart services with one click.
-- Open terminal tabs for running services.
+- Start/stop/restart services from a top command bar.
+- Auto-open terminal tabs per service (live if running, read-only recent logs if stopped).
 - Exposes API endpoints for AI tooling (`/api/state`, `/api/logs`, `/api/snapshot`, process control).
 
 ## Quick start

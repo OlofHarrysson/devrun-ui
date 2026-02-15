@@ -118,14 +118,13 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
   await expect(projectItem).toBeVisible();
   await projectItem.click();
 
-  const serviceRow = page.locator(".service-row", { hasText: SERVICE_NAME }).first();
-  await expect(serviceRow).toBeVisible();
+  await expect(page.locator("#command-bar")).toBeVisible();
+  await page.locator("#cmd-start-btn").click();
 
-  await serviceRow.getByRole("button", { name: "Play" }).click();
-
-  const tab = page.locator(".terminal-tab", {
+  const serviceTab = page.locator(".terminal-tab", {
     hasText: `${PROJECT_NAME} / ${SERVICE_NAME}`,
-  }).first();
+  });
+  const tab = serviceTab.first();
   const tabStatus = tab.locator(".terminal-tab-status");
 
   await expect(tab).toBeVisible();
@@ -136,16 +135,16 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
   const initialRunId = serviceRunning.runId;
   expect(initialRunId).toBeTruthy();
 
-  await serviceRow.getByRole("button", { name: "Stop" }).click();
+  await page.locator("#cmd-stop-btn").click();
   await expect(tabStatus).toHaveText(/stopped \(logs\)|disconnected/, { timeout: 15_000 });
 
-  await serviceRow.getByRole("button", { name: "Terminal" }).click();
+  await projectItem.click();
   await expect(tabStatus).toHaveText("stopped (logs)", { timeout: 15_000 });
 
-  await expect(page.locator(".terminal-tab")).toHaveCount(1);
+  await expect(serviceTab).toHaveCount(1);
 
-  await serviceRow.getByRole("button", { name: "Restart" }).click();
-  await expect(page.locator(".terminal-tab")).toHaveCount(1);
+  await page.locator("#cmd-restart-btn").click();
+  await expect(serviceTab).toHaveCount(1);
   await expect(tabStatus).toHaveText("live", { timeout: 15_000 });
 
   const serviceAfterRestart = await getServiceState();

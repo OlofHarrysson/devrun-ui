@@ -26,6 +26,14 @@ app.use(express.static(publicDir));
 
 const DEFAULT_PROJECTS = [
   {
+    name: "devrun-ui",
+    root: "/Users/olof/git/codex-projects/devrun-ui",
+    service: {
+      name: "web",
+      cmd: "PORT=4327 npm run dev",
+    } satisfies ProjectService,
+  },
+  {
     name: "youtube-blooper-app",
     root: "/Users/olof/git/youtube-looper",
     service: {

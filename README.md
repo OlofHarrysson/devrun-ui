@@ -57,6 +57,7 @@ services:
 
 On startup, Devrun attempts to add these projects automatically (if they exist on disk):
 
+- `/Users/olof/git/codex-projects/devrun-ui`
 - `/Users/olof/git/youtube-looper`
 - `/Users/olof/git/bluesky-scheduler`
 - `/Users/olof/git/codex-projects/chat-summary-viewer-mvp`

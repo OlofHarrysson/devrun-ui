@@ -44,7 +44,7 @@ function makeKey(projectId: string, serviceName: string) {
 }
 
 function marker(text: string, at = new Date().toISOString()) {
-  return `\r\n[${at}] ${text}\r\n`;
+  return `[${at}] ${text}\n`;
 }
 
 function buildChildEnv() {
@@ -52,6 +52,28 @@ function buildChildEnv() {
   // Avoid inheriting server port into child apps (can collide with Devrun itself).
   delete env.PORT;
   return env as Record<string, string>;
+}
+
+function signalProcessTree(
+  child: ReturnType<typeof spawnChild>,
+  signal: NodeJS.Signals,
+) {
+  // In pipe mode, we need to terminate the whole process tree (e.g. tsx watch + node child).
+  // On Unix we create a detached process group and signal the group by negative pid.
+  if (process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // fallback to direct child signal
+    }
+  }
+
+  try {
+    child.kill(signal);
+  } catch {
+    // no-op
+  }
 }
 
 function createPtyRunner(
@@ -99,6 +121,7 @@ function createPipeRunner(
     cwd,
     env: buildChildEnv(),
     stdio: "pipe",
+    detached: process.platform !== "win32",
   });
 
   return {
@@ -109,10 +132,10 @@ function createPipeRunner(
       // Not supported in pipe mode.
     },
     interrupt() {
-      child.kill("SIGINT");
+      signalProcessTree(child, "SIGINT");
     },
     kill() {
-      child.kill("SIGKILL");
+      signalProcessTree(child, "SIGKILL");
     },
     onData(listener) {
       child.stdout?.on("data", (chunk: Buffer | string) => {
@@ -280,7 +303,8 @@ export class ProcessManager {
     });
 
     runner.onExit((exitCode) => {
-      const msg = marker(`[process exited ${exitCode}]`);
+      const needsNewline = session.logBuffer && !session.logBuffer.endsWith("\n");
+      const msg = `${needsNewline ? "\n" : ""}${marker(`[process exited ${exitCode}]`)}`;
       this.appendLog(session, msg);
       this.recordHistory(session.projectId, session.serviceName, "exit", {
         runId: session.runId,

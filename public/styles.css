@@ -165,30 +165,10 @@ body {
   max-width: 100%;
 }
 
-.command-service-picker {
-  display: grid;
-  gap: 6px;
-  font-size: 11px;
+.command-service-name {
+  font-size: 13px;
   font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.command-select {
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--line-strong);
-  background: #fff;
-  color: var(--text);
-  padding: 0 11px;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.command-select:focus-visible {
-  outline: 2px solid #93c5fd;
-  outline-offset: 1px;
+  color: #334155;
 }
 
 .command-meta {

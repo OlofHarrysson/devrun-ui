@@ -11,6 +11,7 @@ Local GUI to run long-lived dev services per project, with real PTY terminals in
 - Store per-project service config in Devrun (no per-repo YAML required).
 - Start/stop/restart services from a top command bar.
 - Auto-open terminal tabs per service (live if running, read-only recent logs if stopped).
+- Service tabs are project-scoped: select a project first, then switch between that project's services.
 - Exposes API endpoints for AI tooling (`/api/state`, `/api/logs`, `/api/snapshot`, process control).
 
 ## Quick start

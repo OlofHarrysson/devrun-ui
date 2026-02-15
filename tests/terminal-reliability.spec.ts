@@ -122,7 +122,7 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
   await page.locator("#cmd-start-btn").click();
 
   const serviceTab = page.locator(".terminal-tab", {
-    hasText: `${PROJECT_NAME} / ${SERVICE_NAME}`,
+    hasText: SERVICE_NAME,
   });
   const tab = serviceTab.first();
   const tabStatus = tab.locator(".terminal-tab-status");

@@ -594,27 +594,9 @@
 
     const leftControls = document.createElement("div");
     leftControls.className = "command-left";
-
-    const servicePicker = document.createElement("label");
-    servicePicker.className = "command-service-picker";
-    servicePicker.textContent = "Service";
-    const select = document.createElement("select");
-    select.className = "command-select";
-    for (const projectService of project.services) {
-      const option = document.createElement("option");
-      option.value = projectService.name;
-      option.textContent = `${projectService.name} (${projectService.running ? "running" : "stopped"})`;
-      select.appendChild(option);
-    }
-    select.value = service.name;
-    select.addEventListener("change", () => {
-      state.selectedServiceByProject.set(project.id, select.value);
-      render();
-      openSelectedServiceTerminal().catch((error) => {
-        alert(error.message || "Failed to open terminal");
-      });
-    });
-    servicePicker.appendChild(select);
+    leftControls.innerHTML = `
+      <div class="command-service-name">Service: ${escapeHtml(service.name)}</div>
+    `;
 
     const commandMeta = document.createElement("div");
     commandMeta.className = "command-meta";
@@ -625,7 +607,6 @@
       <code class="command-preview">${escapeHtml(service.cmd)}</code>
     `;
 
-    leftControls.appendChild(servicePicker);
     leftControls.appendChild(commandMeta);
 
     const actions = document.createElement("div");
@@ -667,32 +648,49 @@
 
   function renderTerminalTabs() {
     terminalTabsEl.innerHTML = "";
-    const entries = Array.from(state.terminals.values());
-
-    if (!entries.length) {
-      terminalTabsEl.innerHTML = "";
-      terminalStackEl.innerHTML = '<div class="terminal-empty">Start a service and open a terminal.</div>';
+    const project = selectedProject();
+    if (!project) {
+      terminalStackEl.innerHTML = '<div class="terminal-empty">Select a project to open a terminal.</div>';
       return;
     }
 
-    for (const entry of entries) {
+    if (project.configError || !project.services.length) {
+      terminalStackEl.innerHTML = '<div class="terminal-empty">Configure a service to open a terminal.</div>';
+      return;
+    }
+
+    const activeService = selectedService(project);
+    for (const service of project.services) {
+      const key = serviceKey(project.id, service.name);
+      const entry = state.terminals.get(key);
+      const connectionState = entry
+        ? entry.connectionState
+        : service.running
+          ? "live"
+          : "stopped";
       const tab = document.createElement("button");
-      tab.className = `terminal-tab ${entry.key === state.activeTerminalKey ? "active" : ""}`;
-      const label = stateLabelByKey[entry.connectionState] || entry.connectionState;
+      tab.className = `terminal-tab ${activeService?.name === service.name ? "active" : ""}`;
+      const label = stateLabelByKey[connectionState] || connectionState;
       tab.innerHTML = `
-        <span class="terminal-tab-title">${escapeHtml(entry.projectName)} / ${escapeHtml(entry.serviceName)}</span>
-        <span class="terminal-tab-status terminal-tab-status-${entry.connectionState}">${escapeHtml(label)}</span>
+        <span class="terminal-tab-title">${escapeHtml(service.name)}</span>
+        <span class="terminal-tab-status terminal-tab-status-${connectionState}">${escapeHtml(label)}</span>
       `;
       tab.addEventListener("click", () => {
-        state.activeTerminalKey = entry.key;
-        state.selectedProjectId = entry.projectId;
-        state.selectedServiceByProject.set(entry.projectId, entry.serviceName);
+        state.selectedProjectId = project.id;
+        state.selectedServiceByProject.set(project.id, service.name);
+        state.activeTerminalKey = key;
         render();
+        openSelectedServiceTerminal().catch((error) => {
+          alert(error.message || "Failed to open terminal");
+        });
       });
 
       terminalTabsEl.appendChild(tab);
     }
 
+    if (activeService) {
+      state.activeTerminalKey = serviceKey(project.id, activeService.name);
+    }
     renderTerminalViews();
   }
 
@@ -854,6 +852,17 @@
     ensureSelectedServices();
     syncTerminalEntries();
     render();
+
+    const project = selectedProject();
+    const service = selectedService(project);
+    if (project && service) {
+      const key = serviceKey(project.id, service.name);
+      if (!state.terminals.has(key)) {
+        openSelectedServiceTerminal().catch(() => {
+          // best effort; keep UI responsive during polling
+        });
+      }
+    }
   }
 
   function escapeHtml(value) {

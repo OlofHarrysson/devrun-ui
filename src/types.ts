@@ -16,16 +16,27 @@ export type ProjectConfig = {
   services: ProjectService[];
 };
 
+export type ServiceRuntimeState = {
+  name: string;
+  cmd: string;
+  cwd?: string;
+  running: boolean;
+  runId?: string;
+  lastRunId?: string;
+};
+
+export type RunningService = {
+  projectId: string;
+  serviceName: string;
+  startedAt: string;
+  runId: string;
+};
+
 export type ProjectState = {
   id: string;
   name: string;
   root: string;
   configPath: string;
-  services: Array<{
-    name: string;
-    cmd: string;
-    cwd?: string;
-    running: boolean;
-  }>;
+  services: ServiceRuntimeState[];
   configError?: string;
 };

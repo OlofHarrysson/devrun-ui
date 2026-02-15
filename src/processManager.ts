@@ -1,4 +1,5 @@
 import path from "path";
+import { randomUUID } from "crypto";
 import { spawn as spawnChild } from "child_process";
 import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
@@ -18,6 +19,7 @@ type Session = {
   key: string;
   projectId: string;
   serviceName: string;
+  runId: string;
   runner: ProcessRunner;
   startedAt: string;
   logBuffer: string;
@@ -25,6 +27,7 @@ type Session = {
 };
 
 type RecentLog = {
+  runId: string;
   logBuffer: string;
   exitCode: number;
   exitedAt: string;
@@ -134,6 +137,7 @@ export class ProcessManager {
       projectId: session.projectId,
       serviceName: session.serviceName,
       startedAt: session.startedAt,
+      runId: session.runId,
     }));
   }
 
@@ -161,13 +165,15 @@ export class ProcessManager {
       modeNotice = `\r\n[pty unavailable, using pipe mode: ${reason}]\r\n`;
     }
 
+    const runId = randomUUID();
     const session: Session = {
       key,
       projectId: project.id,
       serviceName: service.name,
+      runId,
       runner,
       startedAt: new Date().toISOString(),
-      logBuffer: `\r\n$ ${service.cmd}\r\n${modeNotice}`,
+      logBuffer: `\r\n[run ${runId}]\r\n$ ${service.cmd}\r\n${modeNotice}`,
       clients: new Set<WebSocket>(),
     };
 
@@ -193,7 +199,7 @@ export class ProcessManager {
       for (const client of session.clients) {
         if (client.readyState === client.OPEN) {
           client.send(JSON.stringify({ type: "output", data: msg }));
-          client.send(JSON.stringify({ type: "exited", exitCode }));
+          client.send(JSON.stringify({ type: "exited", exitCode, runId: session.runId }));
         }
         try {
           client.close(1000, "Process exited");
@@ -208,6 +214,7 @@ export class ProcessManager {
         this.sessions.delete(key);
       }
       this.recentLogs.set(key, {
+        runId: session.runId,
         logBuffer: session.logBuffer.slice(-MAX_LOG_CHARS),
         exitCode,
         exitedAt: new Date().toISOString(),
@@ -292,18 +299,39 @@ export class ProcessManager {
     return true;
   }
 
-  attach(projectId: string, serviceName: string, ws: WebSocket, replay = true) {
+  attach(
+    projectId: string,
+    serviceName: string,
+    ws: WebSocket,
+    replay = true,
+    expectedRunId?: string,
+  ) {
     const session = this.sessions.get(makeKey(projectId, serviceName));
     if (!session) {
-      return false;
+      return { ok: false as const, error: "Process is not running" };
+    }
+
+    if (expectedRunId && session.runId !== expectedRunId) {
+      return {
+        ok: false as const,
+        error: `Run mismatch (expected ${expectedRunId}, active ${session.runId})`,
+      };
     }
 
     session.clients.add(ws);
+    ws.send(
+      JSON.stringify({
+        type: "meta",
+        runId: session.runId,
+        startedAt: session.startedAt,
+        mode: session.runner.mode,
+      }),
+    );
     if (replay && session.logBuffer) {
       ws.send(JSON.stringify({ type: "output", data: session.logBuffer }));
     }
 
-    return true;
+    return { ok: true as const, runId: session.runId };
   }
 
   detach(projectId: string, serviceName: string, ws: WebSocket) {
@@ -315,7 +343,31 @@ export class ProcessManager {
     session.clients.delete(ws);
   }
 
-  getLogTail(projectId: string, serviceName: string, chars = 6000) {
+  getRunInfo(projectId: string, serviceName: string) {
+    const key = makeKey(projectId, serviceName);
+    const session = this.sessions.get(key);
+    if (session) {
+      return {
+        runId: session.runId,
+        lastRunId: session.runId,
+        running: true,
+      };
+    }
+
+    const recent = this.recentLogs.get(key);
+    return {
+      runId: undefined,
+      lastRunId: recent?.runId,
+      running: false,
+    };
+  }
+
+  getLogTail(
+    projectId: string,
+    serviceName: string,
+    chars = 6000,
+    expectedRunId?: string,
+  ) {
     if (chars <= 0) {
       return "";
     }
@@ -323,11 +375,17 @@ export class ProcessManager {
     const key = makeKey(projectId, serviceName);
     const session = this.sessions.get(key);
     if (session) {
+      if (expectedRunId && expectedRunId !== session.runId) {
+        return "";
+      }
       return session.logBuffer.slice(-chars);
     }
 
     const recent = this.recentLogs.get(key);
     if (!recent) {
+      return "";
+    }
+    if (expectedRunId && expectedRunId !== recent.runId) {
       return "";
     }
 

@@ -158,12 +158,17 @@ function buildProjectState(project: RegistryEntry): ProjectState {
       name: config.name || project.name,
       root: project.root,
       configPath,
-      services: config.services.map((service) => ({
-        name: service.name,
-        cmd: service.cmd,
-        cwd: service.cwd,
-        running: processes.isRunning(project.id, service.name),
-      })),
+      services: config.services.map((service) => {
+        const runInfo = processes.getRunInfo(project.id, service.name);
+        return {
+          name: service.name,
+          cmd: service.cmd,
+          cwd: service.cwd,
+          running: runInfo.running,
+          runId: runInfo.runId,
+          lastRunId: runInfo.lastRunId,
+        };
+      }),
     };
   } catch (error) {
     return {
@@ -350,17 +355,20 @@ app.get("/api/logs", (req, res) => {
     typeof req.query.serviceName === "string" ? req.query.serviceName : "";
   const charsRaw =
     typeof req.query.chars === "string" ? Number(req.query.chars) : 4000;
+  const runId = typeof req.query.runId === "string" ? req.query.runId.trim() : "";
   const chars = Number.isFinite(charsRaw) ? Math.min(Math.max(charsRaw, 200), 50_000) : 4000;
 
   if (!projectId || !serviceName) {
     return badRequest(res, "Missing projectId or serviceName");
   }
 
+  const runInfo = processes.getRunInfo(projectId, serviceName);
   return res.json({
     projectId,
     serviceName,
     chars,
-    output: processes.getLogTail(projectId, serviceName, chars),
+    runId: runInfo.runId || runInfo.lastRunId || null,
+    output: processes.getLogTail(projectId, serviceName, chars, runId || undefined),
   });
 });
 
@@ -372,6 +380,7 @@ app.post("/api/snapshot", (req, res) => {
   const logTails = state.running.map((proc) => ({
     projectId: proc.projectId,
     serviceName: proc.serviceName,
+    runId: proc.runId,
     tail: processes.getLogTail(proc.projectId, proc.serviceName, chars),
   }));
 
@@ -388,16 +397,17 @@ wss.on("connection", (ws, req: IncomingMessage) => {
   const projectId = url.searchParams.get("projectId") || "";
   const serviceName = url.searchParams.get("serviceName") || "";
   const replay = url.searchParams.get("replay") !== "0";
+  const runId = url.searchParams.get("runId") || "";
 
   if (!projectId || !serviceName) {
     ws.close(1008, "Missing projectId/serviceName");
     return;
   }
 
-  const attached = processes.attach(projectId, serviceName, ws, replay);
-  if (!attached) {
-    ws.send(JSON.stringify({ type: "error", error: "Process is not running" }));
-    ws.close(1008, "Process not running");
+  const attached = processes.attach(projectId, serviceName, ws, replay, runId || undefined);
+  if (!attached.ok) {
+    ws.send(JSON.stringify({ type: "error", error: attached.error }));
+    ws.close(1008, attached.error);
     return;
   }
 

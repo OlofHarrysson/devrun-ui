@@ -73,6 +73,21 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/snapshot`
 - `WS /ws?projectId=...&serviceName=...`
 
+### Run identity
+
+- Running services now expose a `runId` in `GET /api/state` and `/api/snapshot`.
+- Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
+- `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
+- `WS /ws` accepts optional `runId` query param to ensure terminal attach targets the expected run.
+
+## Testing
+
+- End-to-end terminal reliability test:
+
+```bash
+npm run test:e2e
+```
+
 ## Notes
 - This is localhost tooling, no auth layer in MVP.
 - Project registry is stored at `.devrun/projects.json`.

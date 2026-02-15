@@ -70,12 +70,15 @@
       }
       return response.json();
     },
-    async logs(projectId, serviceName, chars = 8000) {
+    async logs(projectId, serviceName, chars = 8000, runId) {
       const query = new URLSearchParams({
         projectId,
         serviceName,
         chars: String(chars),
       });
+      if (runId) {
+        query.set("runId", runId);
+      }
       const response = await fetch(`/api/logs?${query.toString()}`);
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -166,14 +169,18 @@
 
   async function loadRecentLogs(entry, projectId, serviceName, options = {}) {
     const showBanner = options.showBanner !== false;
+    const runId = options.runId;
 
     closeEntrySocket(entry);
     setEntryReadOnly(entry, true);
     updateEntryStatus(entry, "stopped");
 
     try {
-      const payload = await api.logs(projectId, serviceName, 12_000);
+      const payload = await api.logs(projectId, serviceName, 12_000, runId);
       const output = typeof payload.output === "string" ? payload.output : "";
+      if (payload.runId) {
+        entry.lastKnownRunId = payload.runId;
+      }
       if (!output) {
         if (showBanner) {
           writeNotice(entry, "service stopped; no recent logs available");
@@ -199,6 +206,7 @@
     const force = Boolean(options.force);
     const replay = options.replay !== false;
     const showSeparator = Boolean(options.showSeparator);
+    const expectedRunId = options.expectedRunId || service.runId || "";
 
     if (!force && entry.socket) {
       const readyState = entry.socket.readyState;
@@ -221,7 +229,7 @@
     entry.lastLogSnapshot = "";
 
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const url = `${protocol}://${window.location.host}/ws?projectId=${encodeURIComponent(project.id)}&serviceName=${encodeURIComponent(service.name)}&replay=${replay ? "1" : "0"}`;
+    const url = `${protocol}://${window.location.host}/ws?projectId=${encodeURIComponent(project.id)}&serviceName=${encodeURIComponent(service.name)}&replay=${replay ? "1" : "0"}${expectedRunId ? `&runId=${encodeURIComponent(expectedRunId)}` : ""}`;
     const socket = new WebSocket(url);
     entry.socket = socket;
 
@@ -246,6 +254,11 @@
 
       try {
         const message = JSON.parse(event.data);
+        if (message.type === "meta" && message.runId) {
+          entry.runId = message.runId;
+          entry.lastKnownRunId = message.runId;
+        }
+
         if (message.type === "output" && typeof message.data === "string") {
           entry.term.write(message.data);
         }
@@ -255,6 +268,9 @@
         }
 
         if (message.type === "exited") {
+          if (message.runId) {
+            entry.lastKnownRunId = message.runId;
+          }
           markDisconnected(entry, `process exited ${message.exitCode}`, "stopped");
         }
       } catch {
@@ -326,6 +342,8 @@
       hasConnected: false,
       lastNotice: "",
       lastLogSnapshot: "",
+      runId: null,
+      lastKnownRunId: null,
     };
 
     setEntryReadOnly(entry, true);
@@ -365,12 +383,14 @@
         force: options.forceReconnect,
         replay,
         showSeparator: options.showSeparator,
+        expectedRunId: service.runId,
       });
       return;
     }
 
     await loadRecentLogs(entry, project.id, service.name, {
       showBanner: true,
+      runId: service.lastRunId || entry.lastKnownRunId,
     });
   }
 
@@ -385,6 +405,20 @@
       if (!service) {
         markDisconnected(entry, "service no longer exists", "disconnected");
         continue;
+      }
+
+      if (
+        service.running &&
+        service.runId &&
+        entry.connectionState === "live" &&
+        entry.runId &&
+        service.runId !== entry.runId
+      ) {
+        markDisconnected(entry, "attached to stale run; reconnect needed", "disconnected");
+      }
+
+      if (service.lastRunId) {
+        entry.lastKnownRunId = service.lastRunId;
       }
 
       if (!service.running && entry.connectionState === "live") {

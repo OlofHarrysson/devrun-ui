@@ -32,6 +32,23 @@ export type RunningService = {
   runId: string;
 };
 
+export type ServiceHistoryEventType =
+  | "start"
+  | "stop_requested"
+  | "restart_requested"
+  | "stdin_command"
+  | "exit";
+
+export type ServiceHistoryEvent = {
+  seq: number;
+  ts: string;
+  projectId: string;
+  serviceName: string;
+  runId?: string;
+  type: ServiceHistoryEventType;
+  data?: Record<string, unknown>;
+};
+
 export type ProjectState = {
   id: string;
   name: string;

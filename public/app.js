@@ -4,6 +4,8 @@
     selectedProjectId: null,
     selectedServiceByProject: new Map(),
     terminals: new Map(),
+    historyByService: new Map(),
+    historyRequestSeq: 0,
     activeTerminalKey: null,
     pollHandle: null,
   };
@@ -20,6 +22,7 @@
   const commandBarEl = document.getElementById("command-bar");
   const terminalTabsEl = document.getElementById("terminal-tabs");
   const terminalStackEl = document.getElementById("terminal-stack");
+  const historyPanelEl = document.getElementById("history-panel");
   const addProjectBtn = document.getElementById("add-project-btn");
 
   const api = {
@@ -84,6 +87,20 @@
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error || "Failed to fetch logs");
+      }
+      return response.json();
+    },
+    async history(projectId, serviceName, afterSeq = 0, limit = 100) {
+      const query = new URLSearchParams({
+        projectId,
+        serviceName,
+        afterSeq: String(afterSeq),
+        limit: String(limit),
+      });
+      const response = await fetch(`/api/history?${query.toString()}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || body.hint || "Failed to fetch history");
       }
       return response.json();
     },
@@ -465,6 +482,179 @@
     }
   }
 
+  function historyItemKey(projectId, serviceName) {
+    return serviceKey(projectId, serviceName);
+  }
+
+  function formatHistoryTime(isoTimestamp) {
+    if (!isoTimestamp) {
+      return "--:--:--";
+    }
+
+    const date = new Date(isoTimestamp);
+    if (Number.isNaN(date.getTime())) {
+      return "--:--:--";
+    }
+
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
+
+  function shortRunId(runId) {
+    if (!runId) {
+      return "";
+    }
+    return String(runId).slice(0, 8);
+  }
+
+  function historyEventLabel(type) {
+    const labels = {
+      start: "start",
+      stop_requested: "stop",
+      restart_requested: "restart",
+      stdin_command: "stdin",
+      exit: "exit",
+    };
+    return labels[type] || type || "event";
+  }
+
+  function historyEventSummary(event) {
+    const data = event && typeof event.data === "object" && event.data ? event.data : {};
+    if (event.type === "start") {
+      const cmd = typeof data.cmd === "string" ? data.cmd : "";
+      return cmd ? `$ ${cmd}` : "service started";
+    }
+
+    if (event.type === "stdin_command") {
+      const command = typeof data.command === "string" ? data.command : "";
+      return command ? `> ${command}` : "stdin input";
+    }
+
+    if (event.type === "exit") {
+      const code = typeof data.exitCode === "number" ? data.exitCode : "?";
+      return `exit code ${code}`;
+    }
+
+    if (event.type === "restart_requested") {
+      return "restart requested";
+    }
+
+    if (event.type === "stop_requested") {
+      return "stop requested";
+    }
+
+    return "event";
+  }
+
+  function renderHistoryPanel() {
+    if (!historyPanelEl) {
+      return;
+    }
+
+    const project = selectedProject();
+    const service = selectedService(project);
+
+    if (!project || !service || project.configError || !project.services.length) {
+      historyPanelEl.innerHTML = `
+        <div class="history-header">
+          <div class="history-title">History</div>
+        </div>
+        <div class="history-empty">Select a configured service to view history.</div>
+      `;
+      return;
+    }
+
+    const key = historyItemKey(project.id, service.name);
+    const entry = state.historyByService.get(key);
+    const events = Array.isArray(entry?.events) ? entry.events : [];
+    const items = events.slice(-10).reverse();
+
+    let body = "";
+    if (entry?.loading && !items.length) {
+      body = '<div class="history-empty">Loading history…</div>';
+    } else if (entry?.error && !items.length) {
+      body = `<div class="history-empty">${escapeHtml(entry.error)}</div>`;
+    } else if (!items.length) {
+      body = '<div class="history-empty">No events yet for this service.</div>';
+    } else {
+      body = items
+        .map((event) => {
+          const summary = historyEventSummary(event);
+          const run = shortRunId(event.runId);
+          return `
+            <div class="history-item">
+              <div class="history-item-top">
+                <span class="history-time">${escapeHtml(formatHistoryTime(event.ts))}</span>
+                <span class="history-type">${escapeHtml(historyEventLabel(event.type))}</span>
+                ${run ? `<span class="history-run">run ${escapeHtml(run)}</span>` : ""}
+              </div>
+              <div class="history-summary">${escapeHtml(summary)}</div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    historyPanelEl.innerHTML = `
+      <div class="history-header">
+        <div class="history-title">History</div>
+        <div class="history-meta">${escapeHtml(service.name)} • ${events.length} events</div>
+      </div>
+      <div class="history-list">${body}</div>
+    `;
+  }
+
+  async function refreshSelectedServiceHistory() {
+    const project = selectedProject();
+    const service = selectedService(project);
+    if (!project || !service || !historyPanelEl) {
+      renderHistoryPanel();
+      return;
+    }
+
+    const key = historyItemKey(project.id, service.name);
+    const previous = state.historyByService.get(key) || {};
+    const requestSeq = state.historyRequestSeq + 1;
+    state.historyRequestSeq = requestSeq;
+
+    state.historyByService.set(key, {
+      ...previous,
+      loading: true,
+      error: "",
+    });
+    renderHistoryPanel();
+
+    try {
+      const payload = await api.history(project.id, service.name, 0, 100);
+      if (state.historyRequestSeq !== requestSeq) {
+        return;
+      }
+
+      state.historyByService.set(key, {
+        loading: false,
+        error: "",
+        events: Array.isArray(payload.events) ? payload.events : [],
+        latestSeq: typeof payload.latestSeq === "number" ? payload.latestSeq : 0,
+        retention: typeof payload.retention === "number" ? payload.retention : 100,
+        fetchedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      if (state.historyRequestSeq !== requestSeq) {
+        return;
+      }
+      state.historyByService.set(key, {
+        ...previous,
+        loading: false,
+        error: error instanceof Error ? error.message : "Failed to load history",
+      });
+    }
+
+    renderHistoryPanel();
+  }
+
   async function openSelectedServiceTerminal(options = {}) {
     const project = selectedProject();
     const service = selectedService(project);
@@ -513,6 +703,9 @@
         render();
         openSelectedServiceTerminal().catch((error) => {
           alert(error.message || "Failed to open terminal");
+        });
+        refreshSelectedServiceHistory().catch(() => {
+          // keep UI usable even if history refresh fails
         });
       });
       projectsEl.appendChild(item);
@@ -683,6 +876,9 @@
         openSelectedServiceTerminal().catch((error) => {
           alert(error.message || "Failed to open terminal");
         });
+        refreshSelectedServiceHistory().catch(() => {
+          // keep UI usable even if history refresh fails
+        });
       });
 
       terminalTabsEl.appendChild(tab);
@@ -843,6 +1039,7 @@
     renderProjects();
     renderProjectPanel();
     renderTerminalTabs();
+    renderHistoryPanel();
   }
 
   async function refreshState() {
@@ -863,6 +1060,8 @@
         });
       }
     }
+
+    await refreshSelectedServiceHistory();
   }
 
   function escapeHtml(value) {

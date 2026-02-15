@@ -20,6 +20,19 @@ type StateResponse = {
   projects: ProjectState[];
 };
 
+type HistoryEvent = {
+  seq: number;
+  type: string;
+  runId?: string;
+};
+
+type HistoryResponse = {
+  events: HistoryEvent[];
+  latestSeq: number;
+  nextAfterSeq: number;
+  retention: number;
+};
+
 const PROJECT_NAME = `devrun-e2e-ui-${Date.now()}`;
 const SERVICE_NAME = "echo";
 const BASE_URL = "http://localhost:4421";
@@ -57,6 +70,12 @@ async function getServiceState() {
   }
 
   return service;
+}
+
+async function getHistory(afterSeq = 0, limit = 100) {
+  return (await api(
+    `/api/history?projectId=${encodeURIComponent(projectId)}&serviceName=${encodeURIComponent(SERVICE_NAME)}&afterSeq=${afterSeq}&limit=${limit}`,
+  )) as HistoryResponse;
 }
 
 test.beforeAll(async () => {
@@ -119,6 +138,8 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
   await projectItem.click();
 
   await expect(page.locator("#command-bar")).toBeVisible();
+  const historyPanel = page.locator("#history-panel");
+  await expect(historyPanel).toBeVisible();
   await page.locator("#cmd-start-btn").click();
 
   const serviceTab = page.locator(".terminal-tab", {
@@ -129,6 +150,7 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
 
   await expect(tab).toBeVisible();
   await expect(tabStatus).toHaveText("live", { timeout: 15_000 });
+  await expect(historyPanel).toContainText("start", { timeout: 15_000 });
 
   const serviceRunning = await getServiceState();
   expect(serviceRunning.running).toBeTruthy();
@@ -137,6 +159,7 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
 
   await page.locator("#cmd-stop-btn").click();
   await expect(tabStatus).toHaveText(/stopped \(logs\)|disconnected/, { timeout: 15_000 });
+  await expect(historyPanel).toContainText("stop", { timeout: 15_000 });
 
   await projectItem.click();
   await expect(tabStatus).toHaveText("stopped (logs)", { timeout: 15_000 });
@@ -146,9 +169,23 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
   await page.locator("#cmd-restart-btn").click();
   await expect(serviceTab).toHaveCount(1);
   await expect(tabStatus).toHaveText("live", { timeout: 15_000 });
+  await expect(historyPanel).toContainText("restart", { timeout: 15_000 });
 
   const serviceAfterRestart = await getServiceState();
   expect(serviceAfterRestart.running).toBeTruthy();
   expect(serviceAfterRestart.runId).toBeTruthy();
   expect(serviceAfterRestart.runId).not.toBe(initialRunId);
+
+  const history = await getHistory(0, 100);
+  expect(history.retention).toBe(100);
+  expect(history.latestSeq).toBeGreaterThan(0);
+  expect(history.nextAfterSeq).toBe(history.latestSeq);
+  expect(history.events.length).toBeGreaterThan(0);
+  expect(history.events.some((event) => event.type === "start")).toBeTruthy();
+  expect(history.events.some((event) => event.type === "stop_requested")).toBeTruthy();
+  expect(history.events.some((event) => event.type === "restart_requested")).toBeTruthy();
+  expect(history.events.some((event) => event.type === "exit")).toBeTruthy();
+
+  const incremental = await getHistory(history.nextAfterSeq, 100);
+  expect(incremental.events.length).toBe(0);
 });

@@ -12,7 +12,8 @@ Local GUI to run long-lived dev services per project, with real PTY terminals in
 - Start/stop/restart services from a top command bar.
 - Auto-open terminal tabs per service (live if running, read-only recent logs if stopped).
 - Service tabs are project-scoped: select a project first, then switch between that project's services.
-- Exposes API endpoints for AI tooling (`/api/state`, `/api/logs`, `/api/snapshot`, process control).
+- Compact history panel shows recent per-service lifecycle/command events alongside the terminal.
+- Exposes API endpoints for AI tooling (`/api/capabilities`, `/api/state`, `/api/history`, `/api/logs`, `/api/snapshot`, process control).
 
 ## Quick start
 
@@ -63,6 +64,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 ## API surface (MVP)
 
 - `GET /api/state`
+- `GET /api/capabilities`
 - `POST /api/projects`
 - `POST /api/project-config`
 - `DELETE /api/projects/:projectId`
@@ -70,6 +72,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/process/stop`
 - `POST /api/process/restart`
 - `POST /api/process/stdin`
+- `GET /api/history?projectId=...&serviceName=...&afterSeq=0&limit=25`
 - `GET /api/logs?projectId=...&serviceName=...&chars=4000`
 - `POST /api/snapshot`
 - `WS /ws?projectId=...&serviceName=...`
@@ -80,6 +83,39 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
 - `WS /ws` accepts optional `runId` query param to ensure terminal attach targets the expected run.
+
+### Event history (low-noise)
+
+- `GET /api/history` returns per-service event history with retention of the latest `100` events.
+- Event types are: `start`, `stop_requested`, `restart_requested`, `stdin_command`, `exit`.
+- Use this for workflow timeline and command context.
+- Keep `GET /api/logs` for verbose service output (stdout/stderr tail).
+
+### AI polling recipe
+
+1. Discover endpoints and constraints:
+
+```bash
+curl -s http://localhost:4317/api/capabilities | jq
+```
+
+2. Discover valid project/service IDs:
+
+```bash
+curl -s http://localhost:4317/api/state | jq
+```
+
+3. First history read:
+
+```bash
+curl -s \"http://localhost:4317/api/history?projectId=<PROJECT_ID>&serviceName=<SERVICE_NAME>\" | jq
+```
+
+4. Incremental polling (cursor-based):
+
+```bash
+curl -s \"http://localhost:4317/api/history?projectId=<PROJECT_ID>&serviceName=<SERVICE_NAME>&afterSeq=<NEXT_AFTER_SEQ>\" | jq
+```
 
 ## Testing
 

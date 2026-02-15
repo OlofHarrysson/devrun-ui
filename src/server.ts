@@ -196,8 +196,103 @@ function badRequest(res: Response, message: string) {
   return res.status(400).json({ error: message });
 }
 
+function parseIntegerQuery(
+  raw: unknown,
+  options: {
+    name: string;
+    defaultValue: number;
+    min: number;
+    max: number;
+  },
+) {
+  if (typeof raw !== "string" || !raw.trim()) {
+    return { ok: true as const, value: options.defaultValue };
+  }
+
+  const value = Number(raw);
+  if (!Number.isInteger(value)) {
+    return {
+      ok: false as const,
+      error: `Invalid '${options.name}': expected an integer.`,
+      hint: `Use '${options.name}' between ${options.min} and ${options.max}.`,
+    };
+  }
+
+  if (value < options.min || value > options.max) {
+    return {
+      ok: false as const,
+      error: `Invalid '${options.name}': must be between ${options.min} and ${options.max}.`,
+      hint: `Try '${options.name}=${options.defaultValue}' for the default.`,
+    };
+  }
+
+  return { ok: true as const, value };
+}
+
 app.get("/api/state", (_req, res) => {
   res.json(buildState());
+});
+
+app.get("/api/capabilities", (_req, res) => {
+  res.json({
+    name: "devrun-ui",
+    now: new Date().toISOString(),
+    description:
+      "Host-native multi-project service runner with PTY terminals and poll-friendly history/log APIs.",
+    endpoints: {
+      state: {
+        method: "GET",
+        path: "/api/state",
+        description: "List projects, services, and currently running processes.",
+      },
+      history: {
+        method: "GET",
+        path: "/api/history",
+        query: {
+          projectId: "required string",
+          serviceName: "required string",
+          afterSeq: "optional integer, default 0",
+          limit: `optional integer, default 25, max ${processes.historyRetention()}`,
+        },
+        description:
+          "Returns non-verbose lifecycle/command events (start, stop_requested, restart_requested, stdin_command, exit).",
+      },
+      logs: {
+        method: "GET",
+        path: "/api/logs",
+        query: {
+          projectId: "required string",
+          serviceName: "required string",
+          chars: "optional integer, default 4000",
+          runId: "optional string",
+        },
+        description:
+          "Returns terminal output tail. Use for verbose runtime logs, separate from event history.",
+      },
+      processControl: [
+        { method: "POST", path: "/api/process/start" },
+        { method: "POST", path: "/api/process/stop" },
+        { method: "POST", path: "/api/process/restart" },
+        { method: "POST", path: "/api/process/stdin" },
+      ],
+      ws: {
+        method: "WS",
+        path: "/ws",
+        query: {
+          projectId: "required string",
+          serviceName: "required string",
+          replay: "optional 1|0",
+          runId: "optional string",
+        },
+      },
+    },
+    pollingRecipe: [
+      "Call GET /api/state to discover projectId and serviceName.",
+      "Call GET /api/history?projectId=...&serviceName=... (capture nextAfterSeq).",
+      "Poll with afterSeq=<nextAfterSeq> for incremental events.",
+      "Use GET /api/logs with runId for verbose output when needed.",
+    ],
+  });
 });
 
 app.get("/api/projects", (_req, res) => {
@@ -268,6 +363,7 @@ app.delete("/api/projects/:projectId", (req, res) => {
 
   removeProject(projectId);
   removeProjectConfig(projectId);
+  processes.clearHistoryForProject(projectId);
   return res.status(204).send();
 });
 
@@ -369,6 +465,81 @@ app.get("/api/logs", (req, res) => {
     chars,
     runId: runInfo.runId || runInfo.lastRunId || null,
     output: processes.getLogTail(projectId, serviceName, chars, runId || undefined),
+  });
+});
+
+app.get("/api/history", (req, res) => {
+  const projectId =
+    typeof req.query.projectId === "string" ? req.query.projectId.trim() : "";
+  const serviceName =
+    typeof req.query.serviceName === "string" ? req.query.serviceName.trim() : "";
+
+  if (!projectId || !serviceName) {
+    return res.status(400).json({
+      error: "Missing projectId or serviceName",
+      hint: "Use /api/history?projectId=<id>&serviceName=<name>",
+    });
+  }
+
+  const project = getProjectById(projectId);
+  if (!project) {
+    return res.status(404).json({
+      error: "Project not found",
+      hint: "Call GET /api/state to discover valid projectId values.",
+    });
+  }
+
+  try {
+    getService(project, serviceName);
+  } catch (error) {
+    return res.status(404).json({
+      error: error instanceof Error ? error.message : "Service not found",
+      hint: "Call GET /api/state and inspect project.services[].name.",
+    });
+  }
+
+  const afterSeqResult = parseIntegerQuery(req.query.afterSeq, {
+    name: "afterSeq",
+    defaultValue: 0,
+    min: 0,
+    max: 1_000_000_000,
+  });
+  if (!afterSeqResult.ok) {
+    return res.status(400).json(afterSeqResult);
+  }
+
+  const limitResult = parseIntegerQuery(req.query.limit, {
+    name: "limit",
+    defaultValue: 25,
+    min: 1,
+    max: processes.historyRetention(),
+  });
+  if (!limitResult.ok) {
+    return res.status(400).json(limitResult);
+  }
+
+  const afterSeq = afterSeqResult.value;
+  const limit = limitResult.value;
+  const runInfo = processes.getRunInfo(projectId, serviceName);
+  const history = processes.getHistory(projectId, serviceName, afterSeq, limit);
+
+  return res.json({
+    projectId,
+    serviceName,
+    running: runInfo.running,
+    runId: runInfo.runId || runInfo.lastRunId || null,
+    retention: processes.historyRetention(),
+    afterSeq,
+    limit,
+    latestSeq: history.latestSeq,
+    nextAfterSeq: history.nextAfterSeq,
+    hasMore: history.hasMore,
+    retained: history.retained,
+    events: history.events,
+    pollHint:
+      history.nextAfterSeq > 0
+        ? `/api/history?projectId=${encodeURIComponent(projectId)}&serviceName=${encodeURIComponent(serviceName)}&afterSeq=${history.nextAfterSeq}`
+        : `/api/history?projectId=${encodeURIComponent(projectId)}&serviceName=${encodeURIComponent(serviceName)}`,
   });
 });
 

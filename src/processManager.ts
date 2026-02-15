@@ -4,6 +4,7 @@ import { spawn as spawnChild } from "child_process";
 import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
 import type { ProjectService, RegistryEntry } from "./types";
+import { ServiceHistoryStore } from "./historyStore";
 
 type ProcessRunner = {
   write: (input: string) => void;
@@ -24,6 +25,7 @@ type Session = {
   startedAt: string;
   logBuffer: string;
   clients: Set<WebSocket>;
+  inputBuffer: string;
 };
 
 type RecentLog = {
@@ -35,9 +37,14 @@ type RecentLog = {
 
 const MAX_LOG_CHARS = 120_000;
 const MAX_RECENT_LOGS = 100;
+const HISTORY_RETENTION = 100;
 
 function makeKey(projectId: string, serviceName: string) {
   return `${projectId}::${serviceName}`;
+}
+
+function marker(text: string, at = new Date().toISOString()) {
+  return `\r\n[${at}] ${text}\r\n`;
 }
 
 function buildChildEnv() {
@@ -127,6 +134,7 @@ function createPipeRunner(
 export class ProcessManager {
   private sessions = new Map<string, Session>();
   private recentLogs = new Map<string, RecentLog>();
+  private history = new ServiceHistoryStore({ retention: HISTORY_RETENTION });
 
   isRunning(projectId: string, serviceName: string) {
     return this.sessions.has(makeKey(projectId, serviceName));
@@ -139,6 +147,79 @@ export class ProcessManager {
       startedAt: session.startedAt,
       runId: session.runId,
     }));
+  }
+
+  historyRetention() {
+    return this.history.retention;
+  }
+
+  getHistory(projectId: string, serviceName: string, afterSeq = 0, limit = 50) {
+    return this.history.list(projectId, serviceName, afterSeq, limit);
+  }
+
+  clearHistoryForProject(projectId: string) {
+    this.history.clearProject(projectId);
+  }
+
+  private recordHistory(
+    projectId: string,
+    serviceName: string,
+    type: "start" | "stop_requested" | "restart_requested" | "stdin_command" | "exit",
+    options?: {
+      runId?: string;
+      data?: Record<string, unknown>;
+    },
+  ) {
+    this.history.append({
+      projectId,
+      serviceName,
+      type,
+      runId: options?.runId,
+      data: options?.data,
+    });
+  }
+
+  private appendLog(session: Session, chunk: string) {
+    session.logBuffer = `${session.logBuffer}${chunk}`;
+    if (session.logBuffer.length > MAX_LOG_CHARS) {
+      session.logBuffer = session.logBuffer.slice(
+        session.logBuffer.length - MAX_LOG_CHARS,
+      );
+    }
+  }
+
+  private trackInput(session: Session, input: string) {
+    if (!input) {
+      return;
+    }
+
+    // Drop common ANSI escape sequences (e.g. arrow keys) so command capture stays clean.
+    const sanitized = input.replace(/\u001b\[[0-9;?]*[A-Za-z~]/g, "");
+
+    for (const ch of sanitized) {
+      if (ch === "\r" || ch === "\n") {
+        const command = session.inputBuffer.trim();
+        if (command) {
+          this.recordHistory(session.projectId, session.serviceName, "stdin_command", {
+            runId: session.runId,
+            data: { command },
+          });
+        }
+        session.inputBuffer = "";
+        continue;
+      }
+
+      if (ch === "\u007f" || ch === "\b") {
+        session.inputBuffer = session.inputBuffer.slice(0, -1);
+        continue;
+      }
+
+      if (ch < " " || ch === "\u001b") {
+        continue;
+      }
+
+      session.inputBuffer = `${session.inputBuffer}${ch}`.slice(-2000);
+    }
   }
 
   start(project: RegistryEntry, service: ProjectService): Session {
@@ -162,28 +243,34 @@ export class ProcessManager {
       runner = createPipeRunner(shell, service.cmd, cwd);
       const reason =
         error instanceof Error ? error.message : "Failed to initialize PTY";
-      modeNotice = `\r\n[pty unavailable, using pipe mode: ${reason}]\r\n`;
+      modeNotice = marker(`[pty unavailable, using pipe mode: ${reason}]`);
     }
 
     const runId = randomUUID();
+    const startedAt = new Date().toISOString();
     const session: Session = {
       key,
       projectId: project.id,
       serviceName: service.name,
       runId,
       runner,
-      startedAt: new Date().toISOString(),
-      logBuffer: `\r\n[run ${runId}]\r\n$ ${service.cmd}\r\n${modeNotice}`,
+      startedAt,
+      logBuffer: `${marker(`[run ${runId}]`, startedAt)}${marker(`$ ${service.cmd}`, startedAt)}${modeNotice}`,
       clients: new Set<WebSocket>(),
+      inputBuffer: "",
     };
 
+    this.recordHistory(project.id, service.name, "start", {
+      runId,
+      data: {
+        cmd: service.cmd,
+        cwd: service.cwd || ".",
+        mode: runner.mode,
+      },
+    });
+
     runner.onData((data) => {
-      session.logBuffer = `${session.logBuffer}${data}`;
-      if (session.logBuffer.length > MAX_LOG_CHARS) {
-        session.logBuffer = session.logBuffer.slice(
-          session.logBuffer.length - MAX_LOG_CHARS,
-        );
-      }
+      this.appendLog(session, data);
 
       for (const client of session.clients) {
         if (client.readyState === client.OPEN) {
@@ -193,8 +280,12 @@ export class ProcessManager {
     });
 
     runner.onExit((exitCode) => {
-      const msg = `\r\n[process exited ${exitCode}]\r\n`;
-      session.logBuffer = `${session.logBuffer}${msg}`;
+      const msg = marker(`[process exited ${exitCode}]`);
+      this.appendLog(session, msg);
+      this.recordHistory(session.projectId, session.serviceName, "exit", {
+        runId: session.runId,
+        data: { exitCode },
+      });
 
       for (const client of session.clients) {
         if (client.readyState === client.OPEN) {
@@ -240,6 +331,10 @@ export class ProcessManager {
       return false;
     }
 
+    this.recordHistory(projectId, serviceName, "stop_requested", {
+      runId: session.runId,
+    });
+
     try {
       session.runner.interrupt();
       setTimeout(() => {
@@ -265,6 +360,9 @@ export class ProcessManager {
   restart(project: RegistryEntry, service: ProjectService) {
     const key = makeKey(project.id, service.name);
     const existing = this.sessions.get(key);
+    this.recordHistory(project.id, service.name, "restart_requested", {
+      runId: existing?.runId,
+    });
 
     if (existing) {
       try {
@@ -286,6 +384,7 @@ export class ProcessManager {
     }
 
     session.runner.write(input);
+    this.trackInput(session, input);
     return true;
   }
 

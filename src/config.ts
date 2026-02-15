@@ -1,28 +1,49 @@
 import fs from "fs";
 import path from "path";
-import YAML from "yaml";
 import type { ProjectConfig } from "./types";
+import { DEVRUN_HOME } from "./storage";
 
-export const PROJECT_CONFIG_FILE = ".devrun.yml";
+type ConfigFile = {
+  projects: Record<string, ProjectConfig>;
+};
 
-export function getProjectConfigPath(root: string) {
-  return path.join(root, PROJECT_CONFIG_FILE);
+const CONFIG_PATH = path.join(DEVRUN_HOME, "project-configs.json");
+
+function ensureConfigDir() {
+  fs.mkdirSync(DEVRUN_HOME, { recursive: true });
 }
 
-export function readProjectConfig(root: string): ProjectConfig {
-  const configPath = getProjectConfigPath(root);
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`Missing ${PROJECT_CONFIG_FILE}`);
+export function getProjectConfigPath() {
+  return CONFIG_PATH;
+}
+
+function readConfigFile(): ConfigFile {
+  ensureConfigDir();
+  if (!fs.existsSync(CONFIG_PATH)) {
+    return { projects: {} };
   }
 
-  const raw = fs.readFileSync(configPath, "utf8");
-  const parsed = YAML.parse(raw) as ProjectConfig;
-
-  if (!parsed || !Array.isArray(parsed.services)) {
-    throw new Error(`${PROJECT_CONFIG_FILE} must include a services array`);
+  const raw = fs.readFileSync(CONFIG_PATH, "utf8");
+  if (!raw.trim()) {
+    return { projects: {} };
   }
 
-  const sanitizedServices = parsed.services
+  const parsed = JSON.parse(raw) as Partial<ConfigFile>;
+  if (!parsed.projects || typeof parsed.projects !== "object") {
+    return { projects: {} };
+  }
+
+  return { projects: parsed.projects };
+}
+
+function writeConfigFile(file: ConfigFile) {
+  ensureConfigDir();
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(file, null, 2));
+}
+
+function sanitizeConfig(config: Partial<ProjectConfig>): ProjectConfig {
+  const servicesInput = Array.isArray(config.services) ? config.services : [];
+  const services = servicesInput
     .filter((service) => Boolean(service?.name && service?.cmd))
     .map((service) => ({
       name: service.name.trim(),
@@ -30,12 +51,47 @@ export function readProjectConfig(root: string): ProjectConfig {
       cwd: service.cwd?.trim() || undefined,
     }));
 
-  if (!sanitizedServices.length) {
-    throw new Error(`${PROJECT_CONFIG_FILE} has no valid services`);
+  if (!services.length) {
+    throw new Error("Project config must include at least one valid service");
+  }
+
+  const seen = new Set<string>();
+  for (const service of services) {
+    const key = service.name.toLowerCase();
+    if (seen.has(key)) {
+      throw new Error("Service names must be unique within a project");
+    }
+    seen.add(key);
   }
 
   return {
-    name: parsed.name?.trim() || undefined,
-    services: sanitizedServices,
+    name: config.name?.trim() || undefined,
+    services,
   };
+}
+
+export function readProjectConfig(projectId: string): ProjectConfig {
+  const file = readConfigFile();
+  const config = file.projects[projectId];
+  if (!config) {
+    throw new Error("Project has no saved services yet. Click Configure to add them.");
+  }
+
+  return sanitizeConfig(config);
+}
+
+export function writeProjectConfig(projectId: string, config: Partial<ProjectConfig>) {
+  const file = readConfigFile();
+  file.projects[projectId] = sanitizeConfig(config);
+  writeConfigFile(file);
+}
+
+export function removeProjectConfig(projectId: string) {
+  const file = readConfigFile();
+  if (!file.projects[projectId]) {
+    return;
+  }
+
+  delete file.projects[projectId];
+  writeConfigFile(file);
 }

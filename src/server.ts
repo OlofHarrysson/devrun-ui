@@ -4,7 +4,12 @@ import http, { type IncomingMessage } from "http";
 import express, { type Response } from "express";
 import { WebSocketServer } from "ws";
 import { readRegistry, addProject, removeProject, getRegistryPath } from "./registry";
-import { getProjectConfigPath, readProjectConfig } from "./config";
+import {
+  getProjectConfigPath,
+  readProjectConfig,
+  removeProjectConfig,
+  writeProjectConfig,
+} from "./config";
 import { ProcessManager } from "./processManager";
 import type { ProjectService, ProjectState, RegistryEntry } from "./types";
 
@@ -19,12 +24,123 @@ app.use(express.json({ limit: "1mb" }));
 const publicDir = path.resolve(__dirname, "../public");
 app.use(express.static(publicDir));
 
+const DEFAULT_PROJECTS = [
+  {
+    name: "youtube-blooper-app",
+    root: "/Users/olof/git/youtube-looper",
+    service: {
+      name: "web",
+      cmd: "NODE_OPTIONS='--localstorage-file=.devrun-localstorage.json' npm run dev",
+      cwd: "website",
+    } satisfies ProjectService,
+  },
+  {
+    name: "bluesky-scheduler",
+    root: "/Users/olof/git/bluesky-scheduler",
+  },
+  {
+    name: "chat-summary-viewer-mvp",
+    root: "/Users/olof/git/codex-projects/chat-summary-viewer-mvp",
+  },
+];
+
+function inferWebService(projectRoot: string): ProjectService | null {
+  const candidates = [
+    {
+      packageJsonPath: path.join(projectRoot, "package.json"),
+      cwd: undefined,
+    },
+    {
+      packageJsonPath: path.join(projectRoot, "website", "package.json"),
+      cwd: "website",
+    },
+  ];
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate.packageJsonPath)) {
+      continue;
+    }
+
+    try {
+      const raw = fs.readFileSync(candidate.packageJsonPath, "utf8");
+      const parsed = JSON.parse(raw) as {
+        scripts?: Record<string, string>;
+      };
+      const scripts = parsed.scripts || {};
+      const cmd = scripts.dev ? "npm run dev" : scripts.start ? "npm run start" : "";
+      if (!cmd) {
+        continue;
+      }
+
+      return {
+        name: "web",
+        cmd,
+        cwd: candidate.cwd,
+      };
+    } catch {
+      // Ignore malformed package.json in auto-inference path.
+    }
+  }
+
+  return null;
+}
+
+function ensureProjectHasConfig(project: RegistryEntry) {
+  const seed = DEFAULT_PROJECTS.find((entry) => entry.root === project.root);
+
+  try {
+    const existing = readProjectConfig(project.id);
+    if (
+      seed?.service &&
+      existing.services.length === 1 &&
+      existing.services[0]?.name === "web" &&
+      existing.services[0]?.cwd === "website" &&
+      existing.services[0]?.cmd === "npm run dev"
+    ) {
+      writeProjectConfig(project.id, {
+        name: existing.name || project.name,
+        services: [seed.service],
+      });
+    }
+    return;
+  } catch {
+    // No config yet. Attempt to auto-seed for quick concept testing.
+  }
+
+  const webService = seed?.service || inferWebService(project.root);
+  if (!webService) {
+    return;
+  }
+
+  try {
+    writeProjectConfig(project.id, {
+      name: project.name,
+      services: [webService],
+    });
+  } catch {
+    // Keep project visible even if seed write fails; user can configure manually.
+  }
+}
+
+function seedDefaultProjects() {
+  for (const seed of DEFAULT_PROJECTS) {
+    if (!fs.existsSync(seed.root) || !fs.statSync(seed.root).isDirectory()) {
+      continue;
+    }
+
+    const project = addProject(seed.root, seed.name);
+    ensureProjectHasConfig(project);
+  }
+}
+
+seedDefaultProjects();
+
 function getProjectById(projectId: string): RegistryEntry | undefined {
   return readRegistry().find((project) => project.id === projectId);
 }
 
 function getService(project: RegistryEntry, serviceName: string): ProjectService {
-  const config = readProjectConfig(project.root);
+  const config = readProjectConfig(project.id);
   const service = config.services.find((entry) => entry.name === serviceName);
   if (!service) {
     throw new Error(`Service '${serviceName}' not found in ${project.root}`);
@@ -34,9 +150,9 @@ function getService(project: RegistryEntry, serviceName: string): ProjectService
 }
 
 function buildProjectState(project: RegistryEntry): ProjectState {
-  const configPath = getProjectConfigPath(project.root);
+  const configPath = getProjectConfigPath();
   try {
-    const config = readProjectConfig(project.root);
+    const config = readProjectConfig(project.id);
     return {
       id: project.id,
       name: config.name || project.name,
@@ -97,7 +213,32 @@ app.post("/api/projects", (req, res) => {
   }
 
   const project = addProject(resolvedRoot, name);
+  ensureProjectHasConfig(project);
   return res.status(201).json({ project: buildProjectState(project) });
+});
+
+app.post("/api/project-config", (req, res) => {
+  const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
+  const name = typeof req.body?.name === "string" ? req.body.name : undefined;
+  const services = Array.isArray(req.body?.services) ? req.body.services : [];
+
+  if (!projectId) {
+    return badRequest(res, "Missing projectId");
+  }
+
+  const project = getProjectById(projectId);
+  if (!project) {
+    return res.status(404).json({ error: "Project not found" });
+  }
+
+  try {
+    writeProjectConfig(projectId, { name, services });
+    return res.json({ project: buildProjectState(project) });
+  } catch (error) {
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : "Failed to save project config",
+    });
+  }
 });
 
 app.delete("/api/projects/:projectId", (req, res) => {
@@ -112,7 +253,7 @@ app.delete("/api/projects/:projectId", (req, res) => {
   }
 
   try {
-    const config = readProjectConfig(project.root);
+    const config = readProjectConfig(project.id);
     for (const service of config.services) {
       processes.stop(project.id, service.name);
     }
@@ -121,6 +262,7 @@ app.delete("/api/projects/:projectId", (req, res) => {
   }
 
   removeProject(projectId);
+  removeProjectConfig(projectId);
   return res.status(204).send();
 });
 
@@ -245,13 +387,14 @@ wss.on("connection", (ws, req: IncomingMessage) => {
   const url = new URL(req.url || "/ws", baseUrl);
   const projectId = url.searchParams.get("projectId") || "";
   const serviceName = url.searchParams.get("serviceName") || "";
+  const replay = url.searchParams.get("replay") !== "0";
 
   if (!projectId || !serviceName) {
     ws.close(1008, "Missing projectId/serviceName");
     return;
   }
 
-  const attached = processes.attach(projectId, serviceName, ws);
+  const attached = processes.attach(projectId, serviceName, ws, replay);
   if (!attached) {
     ws.send(JSON.stringify({ type: "error", error: "Process is not running" }));
     ws.close(1008, "Process not running");

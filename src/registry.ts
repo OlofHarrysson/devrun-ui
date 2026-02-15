@@ -1,18 +1,17 @@
 import fs from "fs";
-import os from "os";
 import path from "path";
 import { randomUUID } from "crypto";
 import type { RegistryEntry } from "./types";
+import { DEVRUN_HOME } from "./storage";
 
 type RegistryFile = {
   projects: RegistryEntry[];
 };
 
-const REGISTRY_DIR = path.join(os.homedir(), ".devrun");
-const REGISTRY_PATH = path.join(REGISTRY_DIR, "projects.json");
+const REGISTRY_PATH = path.join(DEVRUN_HOME, "projects.json");
 
 function ensureRegistryDir() {
-  fs.mkdirSync(REGISTRY_DIR, { recursive: true });
+  fs.mkdirSync(DEVRUN_HOME, { recursive: true });
 }
 
 export function getRegistryPath() {

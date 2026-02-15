@@ -1,26 +1,129 @@
 import path from "path";
-import { spawn, type IPty } from "node-pty";
+import { spawn as spawnChild } from "child_process";
+import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
 import type { ProjectService, RegistryEntry } from "./types";
+
+type ProcessRunner = {
+  write: (input: string) => void;
+  resize: (cols: number, rows: number) => void;
+  interrupt: () => void;
+  kill: () => void;
+  onData: (listener: (data: string) => void) => void;
+  onExit: (listener: (exitCode: number) => void) => void;
+  mode: "pty" | "pipe";
+};
 
 type Session = {
   key: string;
   projectId: string;
   serviceName: string;
-  pty: IPty;
+  runner: ProcessRunner;
   startedAt: string;
   logBuffer: string;
   clients: Set<WebSocket>;
 };
 
+type RecentLog = {
+  logBuffer: string;
+  exitCode: number;
+  exitedAt: string;
+};
+
 const MAX_LOG_CHARS = 120_000;
+const MAX_RECENT_LOGS = 100;
 
 function makeKey(projectId: string, serviceName: string) {
   return `${projectId}::${serviceName}`;
 }
 
+function buildChildEnv() {
+  const env = { ...process.env };
+  // Avoid inheriting server port into child apps (can collide with Devrun itself).
+  delete env.PORT;
+  return env as Record<string, string>;
+}
+
+function createPtyRunner(
+  shell: string,
+  command: string,
+  cwd: string,
+): ProcessRunner {
+  const pty = spawnPty(shell, ["-lc", command], {
+    name: "xterm-color",
+    cols: 120,
+    rows: 32,
+    cwd,
+    env: buildChildEnv(),
+  });
+
+  return {
+    write(input) {
+      pty.write(input);
+    },
+    resize(cols, rows) {
+      pty.resize(Math.max(20, cols), Math.max(8, rows));
+    },
+    interrupt() {
+      pty.write("\u0003");
+    },
+    kill() {
+      pty.kill();
+    },
+    onData(listener) {
+      pty.onData(listener);
+    },
+    onExit(listener) {
+      pty.onExit(({ exitCode }) => listener(exitCode));
+    },
+    mode: "pty",
+  };
+}
+
+function createPipeRunner(
+  shell: string,
+  command: string,
+  cwd: string,
+): ProcessRunner {
+  const child = spawnChild(shell, ["-lc", command], {
+    cwd,
+    env: buildChildEnv(),
+    stdio: "pipe",
+  });
+
+  return {
+    write(input) {
+      child.stdin?.write(input);
+    },
+    resize() {
+      // Not supported in pipe mode.
+    },
+    interrupt() {
+      child.kill("SIGINT");
+    },
+    kill() {
+      child.kill("SIGKILL");
+    },
+    onData(listener) {
+      child.stdout?.on("data", (chunk: Buffer | string) => {
+        listener(chunk.toString());
+      });
+      child.stderr?.on("data", (chunk: Buffer | string) => {
+        listener(chunk.toString());
+      });
+    },
+    onExit(listener) {
+      child.on("exit", (code) => {
+        listener(typeof code === "number" ? code : 1);
+      });
+    },
+    mode: "pipe",
+  };
+}
+
 export class ProcessManager {
   private sessions = new Map<string, Session>();
+  private recentLogs = new Map<string, RecentLog>();
 
   isRunning(projectId: string, serviceName: string) {
     return this.sessions.has(makeKey(projectId, serviceName));
@@ -40,31 +143,35 @@ export class ProcessManager {
     if (existing) {
       return existing;
     }
+    this.recentLogs.delete(key);
 
     const shell = process.env.SHELL || "/bin/zsh";
     const cwd = service.cwd
       ? path.resolve(project.root, service.cwd)
       : project.root;
 
-    const pty = spawn(shell, ["-lc", service.cmd], {
-      name: "xterm-color",
-      cols: 120,
-      rows: 32,
-      cwd,
-      env: process.env as Record<string, string>,
-    });
+    let runner: ProcessRunner;
+    let modeNotice = "";
+    try {
+      runner = createPtyRunner(shell, service.cmd, cwd);
+    } catch (error) {
+      runner = createPipeRunner(shell, service.cmd, cwd);
+      const reason =
+        error instanceof Error ? error.message : "Failed to initialize PTY";
+      modeNotice = `\r\n[pty unavailable, using pipe mode: ${reason}]\r\n`;
+    }
 
     const session: Session = {
       key,
       projectId: project.id,
       serviceName: service.name,
-      pty,
+      runner,
       startedAt: new Date().toISOString(),
-      logBuffer: `\r\n$ ${service.cmd}\r\n`,
+      logBuffer: `\r\n$ ${service.cmd}\r\n${modeNotice}`,
       clients: new Set<WebSocket>(),
     };
 
-    pty.onData((data) => {
+    runner.onData((data) => {
       session.logBuffer = `${session.logBuffer}${data}`;
       if (session.logBuffer.length > MAX_LOG_CHARS) {
         session.logBuffer = session.logBuffer.slice(
@@ -79,7 +186,7 @@ export class ProcessManager {
       }
     });
 
-    pty.onExit(({ exitCode }) => {
+    runner.onExit((exitCode) => {
       const msg = `\r\n[process exited ${exitCode}]\r\n`;
       session.logBuffer = `${session.logBuffer}${msg}`;
 
@@ -88,9 +195,31 @@ export class ProcessManager {
           client.send(JSON.stringify({ type: "output", data: msg }));
           client.send(JSON.stringify({ type: "exited", exitCode }));
         }
+        try {
+          client.close(1000, "Process exited");
+        } catch {
+          // ignore close race
+        }
       }
+      session.clients.clear();
 
-      this.sessions.delete(key);
+      // Guard against restart races: only remove this key if it still points to this session.
+      if (this.sessions.get(key) === session) {
+        this.sessions.delete(key);
+      }
+      this.recentLogs.set(key, {
+        logBuffer: session.logBuffer.slice(-MAX_LOG_CHARS),
+        exitCode,
+        exitedAt: new Date().toISOString(),
+      });
+
+      // Keep memory bounded.
+      if (this.recentLogs.size > MAX_RECENT_LOGS) {
+        const oldestKey = this.recentLogs.keys().next().value;
+        if (oldestKey) {
+          this.recentLogs.delete(oldestKey);
+        }
+      }
     });
 
     this.sessions.set(key, session);
@@ -105,11 +234,11 @@ export class ProcessManager {
     }
 
     try {
-      session.pty.write("\u0003");
+      session.runner.interrupt();
       setTimeout(() => {
         if (this.sessions.has(key)) {
           try {
-            session.pty.kill();
+            session.runner.kill();
           } catch {
             // ignore race while exiting
           }
@@ -117,7 +246,7 @@ export class ProcessManager {
       }, 1200);
     } catch {
       try {
-        session.pty.kill();
+        session.runner.kill();
       } catch {
         // no-op
       }
@@ -132,10 +261,11 @@ export class ProcessManager {
 
     if (existing) {
       try {
-        existing.pty.kill();
+        existing.runner.kill();
       } catch {
         // ignore kill race
       }
+      // Remove the previous session immediately; exit handler is guarded to avoid clobbering.
       this.sessions.delete(key);
     }
 
@@ -148,7 +278,7 @@ export class ProcessManager {
       return false;
     }
 
-    session.pty.write(input);
+    session.runner.write(input);
     return true;
   }
 
@@ -158,18 +288,18 @@ export class ProcessManager {
       return false;
     }
 
-    session.pty.resize(Math.max(20, cols), Math.max(8, rows));
+    session.runner.resize(Math.max(20, cols), Math.max(8, rows));
     return true;
   }
 
-  attach(projectId: string, serviceName: string, ws: WebSocket) {
+  attach(projectId: string, serviceName: string, ws: WebSocket, replay = true) {
     const session = this.sessions.get(makeKey(projectId, serviceName));
     if (!session) {
       return false;
     }
 
     session.clients.add(ws);
-    if (session.logBuffer) {
+    if (replay && session.logBuffer) {
       ws.send(JSON.stringify({ type: "output", data: session.logBuffer }));
     }
 
@@ -186,15 +316,21 @@ export class ProcessManager {
   }
 
   getLogTail(projectId: string, serviceName: string, chars = 6000) {
-    const session = this.sessions.get(makeKey(projectId, serviceName));
-    if (!session) {
-      return "";
-    }
-
     if (chars <= 0) {
       return "";
     }
 
-    return session.logBuffer.slice(-chars);
+    const key = makeKey(projectId, serviceName);
+    const session = this.sessions.get(key);
+    if (session) {
+      return session.logBuffer.slice(-chars);
+    }
+
+    const recent = this.recentLogs.get(key);
+    if (!recent) {
+      return "";
+    }
+
+    return recent.logBuffer.slice(-chars);
   }
 }

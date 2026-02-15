@@ -8,7 +8,7 @@ Local GUI to run long-lived dev services per project, with real PTY terminals in
 
 ## What it does
 - Add multiple projects by path.
-- Each project reads a `.devrun.yml` config file.
+- Store per-project service config in Devrun (no per-repo YAML required).
 - Start/stop/restart services with one click.
 - Open terminal tabs for running services.
 - Exposes API endpoints for AI tooling (`/api/state`, `/api/logs`, `/api/snapshot`, process control).
@@ -31,20 +31,18 @@ npm run dev
 
 [http://localhost:4317](http://localhost:4317)
 
-## Project config
+## Project config (simple mode)
 
-Each managed project should include `.devrun.yml` at project root:
+- Devrun stores service config in:
+  - `.devrun/projects.json`
+  - `.devrun/project-configs.json`
+- No `.devrun.yml` is required in managed projects.
+- On project add/startup, Devrun tries to auto-seed one `web` service from `package.json`:
+  - `npm run dev` if a `dev` script exists
+  - otherwise `npm run start` if a `start` script exists
+- You can override via the **Configure** button in the UI.
 
-```yaml
-name: chat-summary-viewer
-services:
-  - name: web
-    cmd: npm run dev
-  - name: api
-    cmd: uvicorn app.main:app --reload
-```
-
-Optional service cwd (relative to project root):
+Service `cwd` is optional (relative to project root):
 
 ```yaml
 services:
@@ -53,10 +51,19 @@ services:
     cwd: apps/worker
 ```
 
+## Default seeded projects
+
+On startup, Devrun attempts to add these projects automatically (if they exist on disk):
+
+- `/Users/olof/git/youtube-looper`
+- `/Users/olof/git/bluesky-scheduler`
+- `/Users/olof/git/codex-projects/chat-summary-viewer-mvp`
+
 ## API surface (MVP)
 
 - `GET /api/state`
 - `POST /api/projects`
+- `POST /api/project-config`
 - `DELETE /api/projects/:projectId`
 - `POST /api/process/start`
 - `POST /api/process/stop`
@@ -68,4 +75,5 @@ services:
 
 ## Notes
 - This is localhost tooling, no auth layer in MVP.
-- Registry is stored at `~/.devrun/projects.json`.
+- Project registry is stored at `.devrun/projects.json`.
+- Project service config is stored at `.devrun/project-configs.json`.

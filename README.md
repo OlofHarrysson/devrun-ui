@@ -36,14 +36,14 @@ npm run dev
 
 ## UI stack
 
-- Next.js App Router (`app/layout.tsx`, `app/page.tsx`)
+- Next.js App Router (`src/app/layout.tsx`, `src/app/page.tsx`)
 - React 19
 - Tailwind CSS v4 (`tailwindcss` + `@tailwindcss/postcss`)
 - daisyUI v5
-- Zustand store for UI state (`app/store/devrunStore.ts`)
-- App logic split into typed hooks/components (`app/hooks`, `app/components`, `app/lib`)
+- Zustand store for UI state (`src/app/store/devrunStore.ts`)
+- App logic split into typed hooks/components (`src/app/hooks`, `src/app/components`, `src/app/lib`)
 - Single global stylesheet: `src/styles/main.css` (base/theme/fonts only)
-- Component styling is done in Tailwind/daisy class names in `app/components/*.tsx`.
+- Component styling is done in Tailwind/daisy class names in `src/app/components/*.tsx`.
 - Active daisy theme: `corporate`.
 
 ## Project config (simple mode)

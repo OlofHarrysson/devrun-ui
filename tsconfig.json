@@ -25,7 +25,7 @@
   },
   "include": [
     "next-env.d.ts",
-    "app/**/*",
+    "src/app/**/*",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],

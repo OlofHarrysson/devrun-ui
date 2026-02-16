@@ -9,7 +9,7 @@
     "start": "NODE_ENV=production node dist/server.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit",
     "smoke:api": "npm run build && node scripts/smoke-api.mjs",
-    "test:e2e": "playwright test",
+    "test:e2e": "env -u NO_COLOR playwright test",
     "test:all": "npm run smoke:api && npm run test:e2e"
   },
   "keywords": [

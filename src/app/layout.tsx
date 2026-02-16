@@ -1,4 +1,4 @@
-import "../src/styles/main.css";
+import "../styles/main.css";
 import "@xterm/xterm/css/xterm.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";

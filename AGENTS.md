@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `app/`: Next.js App Router UI (`components`, `hooks`, `store`, `lib`).
+- `src/app/`: Next.js App Router UI (`components`, `hooks`, `store`, `lib`).
 - `src/`: TypeScript backend for API/process control and persistence.
 - `src/server.ts`: Express + WebSocket entrypoint and route wiring.
 - `src/processManager.ts`: PTY/pipe lifecycle, runtime metadata, logs, and history.

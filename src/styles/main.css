@@ -2,9 +2,10 @@
 @import "tailwindcss";
 @plugin "daisyui" {
   themes: corporate --default;
+  exclude: properties;
 }
 
-@source "../../app/**/*.{js,jsx,ts,tsx}";
+@source "../app/**/*.{js,jsx,ts,tsx}";
 
 @layer base {
   body {

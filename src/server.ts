@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import http, { type IncomingMessage } from "http";
 import express, { type Response } from "express";
+import next from "next";
 import { WebSocketServer } from "ws";
 import { readRegistry, addProject, removeProject, getRegistryPath } from "./registry";
 import {
@@ -18,11 +19,12 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
 const processes = new ProcessManager();
+const dev = process.env.NODE_ENV !== "production";
+const projectRoot = path.resolve(__dirname, "..");
+const nextApp = next({ dev, dir: projectRoot });
+const handleNext = nextApp.getRequestHandler();
 
 app.use(express.json({ limit: "1mb" }));
-
-const publicDir = path.resolve(__dirname, "../public");
-app.use(express.static(publicDir));
 
 const DEFAULT_PROJECTS = [
   {
@@ -895,10 +897,19 @@ wss.on("connection", (ws, req: IncomingMessage) => {
   });
 });
 
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(publicDir, "index.html"));
+app.all("*", (req, res) => {
+  void handleNext(req, res);
 });
 
-server.listen(PORT, () => {
-  console.log(`[devrun-ui] listening on http://localhost:${PORT}`);
+async function start() {
+  await nextApp.prepare();
+
+  server.listen(PORT, () => {
+    console.log(`[devrun-ui] listening on http://localhost:${PORT}`);
+  });
+}
+
+start().catch((error) => {
+  console.error("[devrun-ui] failed to start", error);
+  process.exit(1);
 });

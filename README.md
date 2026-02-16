@@ -34,6 +34,16 @@ npm run dev
 
 [http://localhost:4317](http://localhost:4317)
 
+## UI stack
+
+- Next.js App Router (`app/layout.tsx`, `app/page.tsx`)
+- React 19
+- Tailwind CSS v4 (`tailwindcss` + `@tailwindcss/postcss`)
+- daisyUI v5
+- App logic split into typed hooks/components (`app/hooks`, `app/components`, `app/lib`)
+- Source stylesheet: `src/styles/main.css`
+- Legacy handcrafted layout styles are preserved in `src/styles/legacy.css`.
+
 ## Project config (simple mode)
 
 - Devrun stores service config in:

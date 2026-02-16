@@ -4,10 +4,10 @@
   "description": "Local GUI process manager with PTY terminals",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
-    "typecheck": "tsc --noEmit",
+    "dev": "NODE_ENV=development tsx watch src/server.ts",
+    "build": "next build && tsc -p tsconfig.server.json",
+    "start": "NODE_ENV=production node dist/server.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit",
     "smoke:api": "npm run build && node scripts/smoke-api.mjs",
     "test:e2e": "playwright test",
     "test:all": "npm run smoke:api && npm run test:e2e"
@@ -21,8 +21,14 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "express": "^4.21.2",
+    "next": "^16.1.6",
     "node-pty": "^1.1.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "ws": "^8.18.0",
     "yaml": "^2.7.0"
   },
@@ -30,7 +36,10 @@
     "@playwright/test": "^1.58.2",
     "@types/express": "^4.17.21",
     "@types/node": "^22.13.1",
+    "@types/react": "19.2.14",
     "@types/ws": "^8.5.14",
+    "daisyui": "^5.5.18",
+    "tailwindcss": "^4.1.18",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

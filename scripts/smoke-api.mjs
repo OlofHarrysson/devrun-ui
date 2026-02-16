@@ -143,6 +143,7 @@ async function main() {
       env: {
         ...process.env,
         PORT: String(port),
+        NODE_ENV: "production",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

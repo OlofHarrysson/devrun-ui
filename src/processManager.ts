@@ -163,10 +163,10 @@ function hasReadySignal(chunk: string) {
 }
 
 function buildChildEnv() {
-  const env = { ...process.env };
+  const env: NodeJS.ProcessEnv = { ...process.env };
   // Avoid inheriting server port into child apps (can collide with Devrun itself).
   delete env.PORT;
-  return env as Record<string, string>;
+  return env;
 }
 
 function signalProcessTree(

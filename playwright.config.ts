@@ -11,7 +11,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: "npm run build && PORT=4421 node dist/server.js",
+    command: "npm run build && NODE_ENV=production PORT=4421 node dist/server.js",
     url: "http://localhost:4421/api/state",
     reuseExistingServer: false,
     timeout: 120_000,

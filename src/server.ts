@@ -482,8 +482,8 @@ app.get("/api/capabilities", (_req, res) => {
     pollingRecipe: [
       "Call GET /api/state to discover projects, defaultService, and runtime metadata.",
       "Start quickly with POST /api/process/start using projectPath or cwd.",
-      "Call GET /api/history?projectId=...&serviceName=... (capture nextAfterSeq).",
-      "Poll with afterSeq=<nextAfterSeq> for incremental events.",
+      "Call GET /api/history?projectPath=... (capture nextAfterSeq; omit serviceName to use defaultService).",
+      "Poll GET /api/history?projectPath=...&afterSeq=<nextAfterSeq> for incremental events.",
       "Use status/ready fields to detect starting vs ready vs error without log scraping.",
       "Use GET /api/logs with runId for verbose output when needed.",
     ],

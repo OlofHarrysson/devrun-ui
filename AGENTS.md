@@ -1,23 +1,32 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/`: TypeScript backend for API and process control.
+- `app/`: Next.js App Router UI (`components`, `hooks`, `store`, `lib`).
+- `src/`: TypeScript backend for API/process control and persistence.
 - `src/server.ts`: Express + WebSocket entrypoint and route wiring.
-- `src/processManager.ts`: PTY/process lifecycle, logs, and history.
+- `src/processManager.ts`: PTY/pipe lifecycle, runtime metadata, logs, and history.
 - `src/registry.ts`, `src/config.ts`, `src/storage.ts`, `src/historyStore.ts`: project/service persistence.
-- `public/`: browser UI assets (`index.html`, `app.js`, `styles.css`).
+- `src/styles/main.css`: global/base styling and theme tokens.
 - `tests/`: Playwright end-to-end specs (`*.spec.ts`).
 - `scripts/`: local validation utilities (for example `smoke-api.mjs`).
 - `dist/` and `.devrun/`: generated build/runtime artifacts (ignored by Git).
 
 ## Build, Test, and Development Commands
 - `npm run dev`: start local dev server with watch mode (`tsx watch src/server.ts`).
-- `npm run build`: compile TypeScript into `dist/`.
+- `npm run build`: build Next.js app and compile server TypeScript (`dist/`).
 - `npm start`: run the compiled server (`node dist/server.js`).
 - `npm run typecheck`: strict TypeScript checks without emitting files.
 - `npm run smoke:api`: build, boot server, and run API smoke validation.
 - `npm run test:e2e`: run Playwright terminal reliability tests.
 - `npm run test:all`: run smoke + e2e as full validation.
+
+## AI Operator Contract
+- Use `GET /api/capabilities` first when endpoint constraints are unknown.
+- Prefer path-first process control (`projectPath` or `cwd`), not ID-first lookups.
+- Omit `serviceName` to use project `defaultService` unless a non-default service is intended.
+- Use `GET /api/history` for low-noise lifecycle/command timeline.
+- Use `GET /api/logs` for verbose output; pass `runId` when run-specific debugging is needed.
+- Use `GET /api/state` when project/service discovery or runtime status metadata is needed.
 
 ## Coding Style & Naming Conventions
 - Use TypeScript with strict typing; avoid `any` unless justified.

@@ -83,7 +83,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/projects`
 - `POST /api/project-config`
 - `DELETE /api/projects/:projectId`
-- `POST /api/process/start`
+- `POST /api/process/start` (auto-registers an existing directory when called with `projectPath`/`cwd` for an unknown project)
 - `POST /api/process/stop`
 - `POST /api/process/restart`
 - `POST /api/process/stdin`
@@ -130,17 +130,34 @@ curl -s -X POST http://localhost:4317/api/process/start \
   -d '{"projectPath":"/Users/olof/git/youtube-looper"}' | jq
 ```
 
-4. First history read:
+4. First history read (path-first, default service):
 
 ```bash
-curl -s \"http://localhost:4317/api/history?projectId=<PROJECT_ID>&serviceName=<SERVICE_NAME>\" | jq
+curl -s "http://localhost:4317/api/history?projectPath=/Users/olof/git/youtube-looper" | jq
 ```
 
 5. Incremental polling (cursor-based):
 
 ```bash
-curl -s \"http://localhost:4317/api/history?projectId=<PROJECT_ID>&serviceName=<SERVICE_NAME>&afterSeq=<NEXT_AFTER_SEQ>\" | jq
+curl -s "http://localhost:4317/api/history?projectPath=/Users/olof/git/youtube-looper&afterSeq=<NEXT_AFTER_SEQ>" | jq
 ```
+
+6. Verbose logs (optionally scoped to a run):
+
+```bash
+curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-looper&chars=8000" | jq
+# Optional run scoping:
+# curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-looper&runId=<RUN_ID>&chars=8000" | jq
+```
+
+## Codex Skill
+
+- Skill name: `shared-terminal-hub-operator`
+- Purpose: help AI agents operate Devrun reliably (discover targets, run actions, poll history, inspect logs, verify outcomes).
+- Skill files:
+  - `$CODEX_HOME/skills/custom/shared-terminal-hub-operator/SKILL.md`
+  - `$CODEX_HOME/skills/custom/shared-terminal-hub-operator/references/devrun-api.md`
+- Recommended usage in agent prompts: `Use $shared-terminal-hub-operator`.
 
 ## Testing
 

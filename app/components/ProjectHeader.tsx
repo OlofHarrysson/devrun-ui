@@ -14,7 +14,7 @@ export function ProjectHeader({
   return (
     <div
       id="project-header"
-      className="flex items-center justify-between gap-3 rounded-[calc(var(--radius-box)+0.1rem)] border border-base-300 bg-base-100 p-3 shadow-sm md:p-3.5"
+      className="flex items-center justify-between gap-3 rounded-box border border-base-300 bg-base-100 p-3 shadow-sm md:p-3.5"
     >
       {!selectedProject ? (
         <div className="text-xl leading-tight text-base-content/70">No project selected</div>

@@ -15,7 +15,9 @@ interface RootLayoutProps {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-base-200 text-base-content">{children}</body>
+      <body data-theme="corporate" className="min-h-screen bg-base-200 text-base-content">
+        {children}
+      </body>
     </html>
   );
 }

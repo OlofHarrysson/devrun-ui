@@ -26,7 +26,7 @@ export function CommandBar({
   return (
     <div
       id="command-bar"
-      className="rounded-[calc(var(--radius-box)+0.1rem)] border border-base-300 bg-base-100 p-3 shadow-sm md:p-3.5"
+      className="rounded-box border border-base-300 bg-base-100 p-3 shadow-sm md:p-3.5"
     >
       {!selectedProject ? (
         <div className="alert alert-info alert-soft grid gap-1 text-sm">

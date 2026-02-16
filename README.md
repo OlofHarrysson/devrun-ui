@@ -40,9 +40,11 @@ npm run dev
 - React 19
 - Tailwind CSS v4 (`tailwindcss` + `@tailwindcss/postcss`)
 - daisyUI v5
+- Zustand store for UI state (`app/store/devrunStore.ts`)
 - App logic split into typed hooks/components (`app/hooks`, `app/components`, `app/lib`)
 - Single global stylesheet: `src/styles/main.css` (base/theme/fonts only)
 - Component styling is done in Tailwind/daisy class names in `app/components/*.tsx`.
+- Active daisy theme: `corporate`.
 
 ## Project config (simple mode)
 

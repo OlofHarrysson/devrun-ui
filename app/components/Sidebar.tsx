@@ -14,9 +14,9 @@ export function Sidebar({
   onSelectProject,
 }: SidebarProps) {
   return (
-    <aside className="flex flex-col gap-3 border-b border-base-300 bg-base-100/90 p-4 md:min-h-screen md:border-r md:border-b-0">
+    <aside className="flex flex-col gap-3 border-b border-base-300 bg-base-100 p-4 md:min-h-screen md:border-r md:border-b-0">
       <div className="grid gap-2.5">
-        <h1 className="m-0 text-[0.8rem] font-extrabold uppercase tracking-[0.15em] text-primary">
+        <h1 className="m-0 text-xs font-extrabold uppercase tracking-widest text-primary">
           Devrun UI
         </h1>
         <button
@@ -54,7 +54,7 @@ export function Sidebar({
                 <div className="project-item-name max-w-[175px] truncate text-left font-bold leading-tight">
                   {project.name}
                 </div>
-                <div className="project-item-meta badge badge-sm badge-ghost self-center text-[0.65rem]">
+                <div className="project-item-meta badge badge-sm badge-ghost self-center text-xs">
                   {runningCount}/{project.services.length} running
                 </div>
               </button>

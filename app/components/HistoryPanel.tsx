@@ -36,7 +36,7 @@ export function HistoryPanel({
   return (
     <aside
       id="history-panel"
-      className="grid min-h-[320px] grid-rows-[auto_1fr] overflow-hidden rounded-[calc(var(--radius-box)+0.1rem)] border border-base-300 bg-base-100 shadow-sm"
+      className="grid min-h-[320px] grid-rows-[auto_1fr] overflow-hidden rounded-box border border-base-300 bg-base-100 shadow-sm"
     >
       {shouldShowEmptyState ? (
         <>

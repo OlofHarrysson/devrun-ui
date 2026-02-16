@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { HISTORY_LIMIT, devrunApi } from "../lib/devrunApi";
 import {
   getProject,
@@ -26,6 +27,7 @@ import type {
   TerminalEntry,
   XtermModules,
 } from "../types";
+import { useDevrunStore } from "../store/devrunStore";
 
 export interface DevrunAppModel {
   projects: ProjectState[];
@@ -55,13 +57,41 @@ export interface DevrunAppModel {
 }
 
 export function useDevrunApp(): DevrunAppModel {
-  const [projects, setProjects] = useState<ProjectState[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedServiceByProject, setSelectedServiceByProject] = useState<Record<string, string>>({});
-  const [historyByService, setHistoryByService] = useState<Record<string, HistoryEntry | undefined>>({});
-  const [activeTerminalKey, setActiveTerminalKey] = useState<string | null>(null);
-  const [terminalKeys, setTerminalKeys] = useState<string[]>([]);
-  const [terminalVersion, setTerminalVersion] = useState(0);
+  const {
+    projects,
+    selectedProjectId,
+    selectedServiceByProject,
+    historyByService,
+    activeTerminalKey,
+    terminalKeys,
+    terminalVersion,
+    setProjects,
+    setSelectedProjectId,
+    setSelectedServiceByProject,
+    setHistoryByService,
+    setActiveTerminalKey,
+    addTerminalKey,
+    bumpTerminalVersion,
+    resetState,
+  } = useDevrunStore(
+    useShallow((state) => ({
+      projects: state.projects,
+      selectedProjectId: state.selectedProjectId,
+      selectedServiceByProject: state.selectedServiceByProject,
+      historyByService: state.historyByService,
+      activeTerminalKey: state.activeTerminalKey,
+      terminalKeys: state.terminalKeys,
+      terminalVersion: state.terminalVersion,
+      setProjects: state.setProjects,
+      setSelectedProjectId: state.setSelectedProjectId,
+      setSelectedServiceByProject: state.setSelectedServiceByProject,
+      setHistoryByService: state.setHistoryByService,
+      setActiveTerminalKey: state.setActiveTerminalKey,
+      addTerminalKey: state.addTerminalKey,
+      bumpTerminalVersion: state.bumpTerminalVersion,
+      resetState: state.resetState,
+    })),
+  );
 
   const historyRequestSeqRef = useRef(0);
   const pollHandleRef = useRef<number | null>(null);
@@ -98,10 +128,6 @@ export function useDevrunApp(): DevrunAppModel {
       activeTerminalKey,
     };
   }, [projects, selectedProjectId, selectedServiceByProject, activeTerminalKey]);
-
-  function bumpTerminalVersion() {
-    setTerminalVersion((value) => value + 1);
-  }
 
   async function loadXtermModules(): Promise<XtermModules> {
     if (!xtermModulesRef.current) {
@@ -431,7 +457,7 @@ export function useDevrunApp(): DevrunAppModel {
     };
 
     terminalsRef.current.set(key, entry);
-    setTerminalKeys((previous) => (previous.includes(key) ? previous : [...previous, key]));
+    addTerminalKey(key);
     bumpTerminalVersion();
 
     const mounted = await waitForTerminalMount(entry);
@@ -829,10 +855,10 @@ export function useDevrunApp(): DevrunAppModel {
     }
 
     setSelectedProjectId(project.id);
-    setSelectedServiceByProject((previous) => ({
-      ...previous,
+    setSelectedServiceByProject({
+      ...stateRef.current.selectedServiceByProject,
       ...(service ? { [project.id]: service.name } : {}),
-    }));
+    });
 
     stateRef.current = {
       ...stateRef.current,
@@ -925,6 +951,7 @@ export function useDevrunApp(): DevrunAppModel {
         entry.term?.dispose();
       }
       terminalsRef.current.clear();
+      resetState();
     };
   }, []);
 

@@ -81,7 +81,7 @@ export function TerminalPanel({
       <div className="grid min-h-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div
           id="terminal-stack"
-          className="relative min-h-[320px] overflow-hidden rounded-[calc(var(--radius-box)+0.1rem)] border border-slate-800 bg-slate-950 shadow-sm"
+          className="relative min-h-[320px] overflow-hidden rounded-box border border-neutral/40 bg-neutral shadow-sm"
         >
           {terminalEmptyMessage ? (
             <div className="terminal-empty p-3.5 text-sm text-base-content/60">{terminalEmptyMessage}</div>

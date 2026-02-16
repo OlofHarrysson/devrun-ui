@@ -5,7 +5,7 @@ import type {
   ProcessActionResponse,
   ProjectServiceConfigInput,
   StateResponse,
-} from "../types";
+} from "../types/ui";
 
 export const HISTORY_LIMIT = 100;
 

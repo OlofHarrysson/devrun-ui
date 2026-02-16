@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { HistoryEntry, ProjectState } from "../types";
+import type { HistoryEntry, ProjectState } from "../types/ui";
 
 export interface DevrunStoreState {
   projects: ProjectState[];

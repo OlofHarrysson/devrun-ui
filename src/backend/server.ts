@@ -20,7 +20,7 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
 const processes = new ProcessManager();
 const dev = process.env.NODE_ENV !== "production";
-const projectRoot = path.resolve(__dirname, "..");
+const projectRoot = process.cwd();
 const nextApp = next({ dev, dir: projectRoot });
 const handleNext = nextApp.getRequestHandler();
 

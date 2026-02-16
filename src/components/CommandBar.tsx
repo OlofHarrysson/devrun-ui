@@ -6,7 +6,7 @@ import type {
   ProcessAction,
   ProjectServiceState,
   ProjectState,
-} from "../types";
+} from "../types/ui";
 
 interface CommandBarProps {
   selectedProject: ProjectState | null;

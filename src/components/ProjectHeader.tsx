@@ -1,4 +1,4 @@
-import type { ProjectState } from "../types";
+import type { ProjectState } from "../types/ui";
 
 interface ProjectHeaderProps {
   selectedProject: ProjectState | null;

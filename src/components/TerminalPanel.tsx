@@ -9,7 +9,7 @@ import type {
   HistoryEvent,
   ProjectServiceState,
   ProjectState,
-} from "../types";
+} from "../types/ui";
 import { HistoryPanel } from "./HistoryPanel";
 
 interface TerminalPanelProps {

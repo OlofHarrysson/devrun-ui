@@ -25,8 +25,8 @@ import type {
   SocketMessage,
   TerminalEntry,
   XtermModules,
-} from "../types";
-import { useDevrunStore } from "../store/devrunStore";
+} from "../types/ui";
+import { useDevrunStore } from "../stores/devrunStore";
 
 export interface DevrunAppModel {
   projects: ProjectState[];

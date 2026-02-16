@@ -1,18 +1,16 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/app/`: Next.js App Router UI (`components`, `hooks`, `store`, `lib`).
-- `src/`: TypeScript backend for API/process control and persistence.
-- `src/server.ts`: Express + WebSocket entrypoint and route wiring.
-- `src/processManager.ts`: PTY/pipe lifecycle, runtime metadata, logs, and history.
-- `src/registry.ts`, `src/config.ts`, `src/storage.ts`, `src/historyStore.ts`: project/service persistence.
+- `src/app/`: Next.js App Router entry files (`layout.tsx`, `page.tsx`).
+- `src/components/`, `src/hooks/`, `src/lib/`, `src/stores/`, `src/types/`: shared UI modules.
+- `src/backend/`: API/runtime process control (`server.ts`, `processManager.ts`, persistence/config modules).
 - `src/styles/main.css`: global/base styling and theme tokens.
 - `tests/`: Playwright end-to-end specs (`*.spec.ts`).
 - `scripts/`: local validation utilities (for example `smoke-api.mjs`).
 - `dist/` and `.devrun/`: generated build/runtime artifacts (ignored by Git).
 
 ## Build, Test, and Development Commands
-- `npm run dev`: start local dev server with watch mode (`tsx watch src/server.ts`).
+- `npm run dev`: start local dev server with watch mode (`tsx watch src/backend/server.ts`).
 - `npm run build`: build Next.js app and compile server TypeScript (`dist/`).
 - `npm start`: run the compiled server (`node dist/server.js`).
 - `npm run typecheck`: strict TypeScript checks without emitting files.

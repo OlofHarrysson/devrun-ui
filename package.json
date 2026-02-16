@@ -4,7 +4,7 @@
   "description": "Local GUI process manager with PTY terminals",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "NODE_ENV=development tsx watch src/server.ts",
+    "dev": "NODE_ENV=development tsx watch src/backend/server.ts",
     "build": "next build && tsc -p tsconfig.server.json",
     "start": "NODE_ENV=production node dist/server.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit",

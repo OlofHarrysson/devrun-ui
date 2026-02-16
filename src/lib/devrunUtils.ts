@@ -4,7 +4,7 @@ import type {
   ProjectServiceState,
   ProjectState,
   ServiceLifecycleStatus,
-} from "../types";
+} from "../types/ui";
 
 export const stateLabelByKey: Record<ConnectionState, string> = {
   live: "live",

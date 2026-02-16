@@ -10,7 +10,7 @@ import type {
   HistoryEvent,
   ProjectServiceState,
   ProjectState,
-} from "../types";
+} from "../types/ui";
 
 interface HistoryPanelProps {
   selectedProject: ProjectState | null;

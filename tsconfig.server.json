@@ -9,9 +9,9 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "src/backend",
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/backend/**/*.ts"]
 }

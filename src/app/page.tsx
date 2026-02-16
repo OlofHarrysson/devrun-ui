@@ -1,10 +1,10 @@
 "use client";
 
-import { CommandBar } from "./components/CommandBar";
-import { ProjectHeader } from "./components/ProjectHeader";
-import { Sidebar } from "./components/Sidebar";
-import { TerminalPanel } from "./components/TerminalPanel";
-import { useDevrunApp } from "./hooks/useDevrunApp";
+import { CommandBar } from "../components/CommandBar";
+import { ProjectHeader } from "../components/ProjectHeader";
+import { Sidebar } from "../components/Sidebar";
+import { TerminalPanel } from "../components/TerminalPanel";
+import { useDevrunApp } from "../hooks/useDevrunApp";
 
 export default function HomePage() {
   const app = useDevrunApp();

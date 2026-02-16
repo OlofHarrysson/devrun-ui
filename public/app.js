@@ -62,11 +62,11 @@
       }
       return response.json();
     },
-    async setProjectConfig(projectId, name, services) {
+    async setProjectConfig(projectId, name, services, defaultService) {
       const response = await fetch("/api/project-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, name, services }),
+        body: JSON.stringify({ projectId, name, services, defaultService }),
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -120,8 +120,11 @@
     }
 
     const selectedServiceName = state.selectedServiceByProject.get(project.id);
+    const defaultService =
+      project.services.find((entry) => entry.name === project.defaultService) ||
+      project.services[0];
     const service =
-      project.services.find((entry) => entry.name === selectedServiceName) || project.services[0];
+      project.services.find((entry) => entry.name === selectedServiceName) || defaultService;
 
     if (service) {
       state.selectedServiceByProject.set(project.id, service.name);
@@ -175,7 +178,10 @@
       const selectedName = state.selectedServiceByProject.get(project.id);
       const selectedStillExists = project.services.some((service) => service.name === selectedName);
       if (!selectedStillExists) {
-        state.selectedServiceByProject.set(project.id, project.services[0].name);
+        const fallback =
+          project.services.find((service) => service.name === project.defaultService) ||
+          project.services[0];
+        state.selectedServiceByProject.set(project.id, fallback.name);
       }
     }
   }
@@ -1003,10 +1009,30 @@
     }
 
     try {
+      const existingDefault = project.defaultService || services[0]?.name || "";
+      const defaultInput = window.prompt(
+        "Default service name (optional; press Enter for first service):",
+        existingDefault,
+      );
+      if (defaultInput === null) {
+        return;
+      }
+      const desiredDefault = (defaultInput || "").trim();
+      const defaultMatch =
+        services.find((entry) => entry.name === desiredDefault) ||
+        services.find((entry) => entry.name.toLowerCase() === desiredDefault.toLowerCase()) ||
+        services[0];
+
+      if (!defaultMatch) {
+        alert("Default service must match one configured service.");
+        return;
+      }
+
       await api.setProjectConfig(
         project.id,
         nameInput.trim() || undefined,
         services,
+        defaultMatch.name,
       );
       await refreshState();
     } catch (error) {

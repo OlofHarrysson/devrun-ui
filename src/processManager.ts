@@ -16,6 +16,14 @@ type ProcessRunner = {
   mode: "pty" | "pipe";
 };
 
+type RuntimeMetadata = {
+  terminalMode: "pty" | "pipe";
+  ptyAvailable: boolean;
+  warnings: string[];
+  effectiveUrl?: string;
+  port?: number;
+};
+
 type Session = {
   key: string;
   projectId: string;
@@ -26,6 +34,9 @@ type Session = {
   logBuffer: string;
   clients: Set<WebSocket>;
   inputBuffer: string;
+  runtime: RuntimeMetadata;
+  warningKeys: Set<string>;
+  detectedUrls: string[];
 };
 
 type RecentLog = {
@@ -33,6 +44,8 @@ type RecentLog = {
   logBuffer: string;
   exitCode: number;
   exitedAt: string;
+  startedAt: string;
+  runtime: RuntimeMetadata;
 };
 
 const MAX_LOG_CHARS = 120_000;
@@ -45,6 +58,80 @@ function makeKey(projectId: string, serviceName: string) {
 
 function marker(text: string, at = new Date().toISOString()) {
   return `[${at}] ${text}\n`;
+}
+
+function trimPunctuation(raw: string) {
+  return raw.replace(/[),.;]+$/g, "");
+}
+
+function normalizeUrl(raw: string) {
+  try {
+    const parsed = new URL(trimPunctuation(raw));
+    if (!/^https?:$/.test(parsed.protocol)) {
+      return "";
+    }
+    if (parsed.hostname === "0.0.0.0" || parsed.hostname === "::") {
+      parsed.hostname = "localhost";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function parseUrls(chunk: string) {
+  const matches = chunk.match(/https?:\/\/[^\s"'`<>]+/gi) || [];
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  for (const match of matches) {
+    const normalized = normalizeUrl(match);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    urls.push(normalized);
+  }
+  return urls;
+}
+
+function isLocalHostUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname === "localhost" ||
+      parsed.hostname === "127.0.0.1" ||
+      parsed.hostname === "::1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function chooseEffectiveUrl(urls: string[]) {
+  if (!urls.length) {
+    return undefined;
+  }
+  const latestLocal = [...urls].reverse().find((url) => isLocalHostUrl(url));
+  return latestLocal || urls[urls.length - 1];
+}
+
+function parseWarningLines(chunk: string) {
+  const warnings: string[] = [];
+  const lines = chunk.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (
+      /(EADDRINUSE|address already in use|port\s+\d+.*(in use|already)|trying\s+\d+|pty unavailable)/i.test(
+        trimmed,
+      )
+    ) {
+      warnings.push(trimmed.slice(0, 260));
+    }
+  }
+  return warnings;
 }
 
 function buildChildEnv() {
@@ -169,6 +256,11 @@ export class ProcessManager {
       serviceName: session.serviceName,
       startedAt: session.startedAt,
       runId: session.runId,
+      terminalMode: session.runtime.terminalMode,
+      ptyAvailable: session.runtime.ptyAvailable,
+      warnings: [...session.runtime.warnings],
+      effectiveUrl: session.runtime.effectiveUrl,
+      port: session.runtime.port,
     }));
   }
 
@@ -208,6 +300,45 @@ export class ProcessManager {
       session.logBuffer = session.logBuffer.slice(
         session.logBuffer.length - MAX_LOG_CHARS,
       );
+    }
+  }
+
+  private updateRuntimeMetadata(session: Session, chunk: string) {
+    const urls = parseUrls(chunk);
+    for (const url of urls) {
+      if (session.detectedUrls.includes(url)) {
+        continue;
+      }
+      session.detectedUrls.push(url);
+      if (session.detectedUrls.length > 20) {
+        session.detectedUrls = session.detectedUrls.slice(-20);
+      }
+    }
+
+    const effectiveUrl = chooseEffectiveUrl(session.detectedUrls);
+    session.runtime.effectiveUrl = effectiveUrl;
+    if (effectiveUrl) {
+      try {
+        const parsed = new URL(effectiveUrl);
+        session.runtime.port = parsed.port ? Number(parsed.port) : undefined;
+      } catch {
+        session.runtime.port = undefined;
+      }
+    } else {
+      session.runtime.port = undefined;
+    }
+
+    const warningLines = parseWarningLines(chunk);
+    for (const warning of warningLines) {
+      const key = warning.toLowerCase();
+      if (session.warningKeys.has(key)) {
+        continue;
+      }
+      session.warningKeys.add(key);
+      session.runtime.warnings.push(warning);
+      if (session.runtime.warnings.length > 12) {
+        session.runtime.warnings = session.runtime.warnings.slice(-12);
+      }
     }
   }
 
@@ -260,13 +391,15 @@ export class ProcessManager {
 
     let runner: ProcessRunner;
     let modeNotice = "";
+    let ptyWarning = "";
     try {
       runner = createPtyRunner(shell, service.cmd, cwd);
     } catch (error) {
       runner = createPipeRunner(shell, service.cmd, cwd);
       const reason =
         error instanceof Error ? error.message : "Failed to initialize PTY";
-      modeNotice = marker(`[pty unavailable, using pipe mode: ${reason}]`);
+      ptyWarning = `PTY unavailable, using pipe mode: ${reason}`;
+      modeNotice = marker(`[${ptyWarning}]`);
     }
 
     const runId = randomUUID();
@@ -281,6 +414,13 @@ export class ProcessManager {
       logBuffer: `${marker(`[run ${runId}]`, startedAt)}${marker(`$ ${service.cmd}`, startedAt)}${modeNotice}`,
       clients: new Set<WebSocket>(),
       inputBuffer: "",
+      runtime: {
+        terminalMode: runner.mode,
+        ptyAvailable: runner.mode === "pty",
+        warnings: ptyWarning ? [ptyWarning] : [],
+      },
+      warningKeys: new Set<string>(ptyWarning ? [ptyWarning.toLowerCase()] : []),
+      detectedUrls: [],
     };
 
     this.recordHistory(project.id, service.name, "start", {
@@ -289,11 +429,13 @@ export class ProcessManager {
         cmd: service.cmd,
         cwd: service.cwd || ".",
         mode: runner.mode,
+        ptyAvailable: runner.mode === "pty",
       },
     });
 
     runner.onData((data) => {
       this.appendLog(session, data);
+      this.updateRuntimeMetadata(session, data);
 
       for (const client of session.clients) {
         if (client.readyState === client.OPEN) {
@@ -333,6 +475,14 @@ export class ProcessManager {
         logBuffer: session.logBuffer.slice(-MAX_LOG_CHARS),
         exitCode,
         exitedAt: new Date().toISOString(),
+        startedAt: session.startedAt,
+        runtime: {
+          terminalMode: session.runtime.terminalMode,
+          ptyAvailable: session.runtime.ptyAvailable,
+          warnings: [...session.runtime.warnings],
+          effectiveUrl: session.runtime.effectiveUrl,
+          port: session.runtime.port,
+        },
       });
 
       // Keep memory bounded.
@@ -447,7 +597,11 @@ export class ProcessManager {
         type: "meta",
         runId: session.runId,
         startedAt: session.startedAt,
-        mode: session.runner.mode,
+        mode: session.runtime.terminalMode,
+        ptyAvailable: session.runtime.ptyAvailable,
+        warnings: session.runtime.warnings,
+        effectiveUrl: session.runtime.effectiveUrl,
+        port: session.runtime.port,
       }),
     );
     if (replay && session.logBuffer) {
@@ -474,6 +628,12 @@ export class ProcessManager {
         runId: session.runId,
         lastRunId: session.runId,
         running: true,
+        startedAt: session.startedAt,
+        terminalMode: session.runtime.terminalMode,
+        ptyAvailable: session.runtime.ptyAvailable,
+        warnings: [...session.runtime.warnings],
+        effectiveUrl: session.runtime.effectiveUrl,
+        port: session.runtime.port,
       };
     }
 
@@ -482,6 +642,12 @@ export class ProcessManager {
       runId: undefined,
       lastRunId: recent?.runId,
       running: false,
+      startedAt: recent?.startedAt,
+      terminalMode: recent?.runtime.terminalMode,
+      ptyAvailable: recent?.runtime.ptyAvailable,
+      warnings: recent ? [...recent.runtime.warnings] : [],
+      effectiveUrl: recent?.runtime.effectiveUrl,
+      port: recent?.runtime.port,
     };
   }
 

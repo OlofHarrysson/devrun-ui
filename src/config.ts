@@ -64,8 +64,26 @@ function sanitizeConfig(config: Partial<ProjectConfig>): ProjectConfig {
     seen.add(key);
   }
 
+  const requestedDefault =
+    typeof config.defaultService === "string" ? config.defaultService.trim() : "";
+  let defaultService = services[0].name;
+  if (requestedDefault) {
+    const matched =
+      services.find((service) => service.name === requestedDefault)?.name ||
+      services.find(
+        (service) => service.name.toLowerCase() === requestedDefault.toLowerCase(),
+      )?.name;
+    if (!matched) {
+      throw new Error(
+        `Default service '${requestedDefault}' does not match any configured service name`,
+      );
+    }
+    defaultService = matched;
+  }
+
   return {
     name: config.name?.trim() || undefined,
+    defaultService,
     services,
   };
 }

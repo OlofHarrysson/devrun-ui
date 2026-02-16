@@ -8,12 +8,13 @@ Local GUI to run long-lived dev services per project, with real PTY terminals in
 
 ## What it does
 - Add multiple projects by path.
-- Store per-project service config in Devrun (no per-repo YAML required).
+- Store per-project service config (including `defaultService`) in Devrun (no per-repo YAML required).
 - Start/stop/restart services from a top command bar.
 - Auto-open terminal tabs per service (live if running, read-only recent logs if stopped).
 - Service tabs are project-scoped: select a project first, then switch between that project's services.
 - Compact history panel shows recent per-service lifecycle/command events alongside the terminal.
 - Exposes API endpoints for AI tooling (`/api/capabilities`, `/api/state`, `/api/history`, `/api/logs`, `/api/snapshot`, process control).
+- `state`, `history`, and `logs` expose structured runtime metadata (`terminalMode`, `ptyAvailable`, `warnings`, `effectiveUrl`, `port`).
 
 ## Quick start
 
@@ -43,6 +44,7 @@ npm run dev
   - `npm run dev` if a `dev` script exists
   - otherwise `npm run start` if a `start` script exists
 - You can override via the **Configure** button in the UI.
+- Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
 
 Service `cwd` is optional (relative to project root):
 
@@ -73,8 +75,8 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/process/stop`
 - `POST /api/process/restart`
 - `POST /api/process/stdin`
-- `GET /api/history?projectId=...&serviceName=...&afterSeq=0&limit=25`
-- `GET /api/logs?projectId=...&serviceName=...&chars=4000`
+- `GET /api/history?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&afterSeq=0&limit=25`
+- `GET /api/logs?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&chars=4000`
 - `POST /api/snapshot`
 - `WS /ws?projectId=...&serviceName=...`
 
@@ -100,19 +102,27 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 curl -s http://localhost:4317/api/capabilities | jq
 ```
 
-2. Discover valid project/service IDs:
+2. Discover valid project IDs, default services, and runtime metadata:
 
 ```bash
 curl -s http://localhost:4317/api/state | jq
 ```
 
-3. First history read:
+3. Start by project path (no ID lookup and no service name required):
+
+```bash
+curl -s -X POST http://localhost:4317/api/process/start \
+  -H "content-type: application/json" \
+  -d '{"projectPath":"/Users/olof/git/youtube-looper"}' | jq
+```
+
+4. First history read:
 
 ```bash
 curl -s \"http://localhost:4317/api/history?projectId=<PROJECT_ID>&serviceName=<SERVICE_NAME>\" | jq
 ```
 
-4. Incremental polling (cursor-based):
+5. Incremental polling (cursor-based):
 
 ```bash
 curl -s \"http://localhost:4317/api/history?projectId=<PROJECT_ID>&serviceName=<SERVICE_NAME>&afterSeq=<NEXT_AFTER_SEQ>\" | jq
@@ -120,10 +130,22 @@ curl -s \"http://localhost:4317/api/history?projectId=<PROJECT_ID>&serviceName=<
 
 ## Testing
 
+- Fast API smoke test (recommended during iteration):
+
+```bash
+npm run smoke:api
+```
+
 - End-to-end terminal reliability test:
 
 ```bash
 npm run test:e2e
+```
+
+- Full validation (smoke + e2e):
+
+```bash
+npm run test:all
 ```
 
 ## Notes

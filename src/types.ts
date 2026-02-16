@@ -13,8 +13,11 @@ export type ProjectService = {
 
 export type ProjectConfig = {
   name?: string;
+  defaultService?: string;
   services: ProjectService[];
 };
+
+export type TerminalMode = "pty" | "pipe";
 
 export type ServiceRuntimeState = {
   name: string;
@@ -23,6 +26,12 @@ export type ServiceRuntimeState = {
   running: boolean;
   runId?: string;
   lastRunId?: string;
+  startedAt?: string;
+  terminalMode?: TerminalMode;
+  ptyAvailable?: boolean;
+  warnings?: string[];
+  effectiveUrl?: string;
+  port?: number;
 };
 
 export type RunningService = {
@@ -30,6 +39,11 @@ export type RunningService = {
   serviceName: string;
   startedAt: string;
   runId: string;
+  terminalMode: TerminalMode;
+  ptyAvailable: boolean;
+  warnings: string[];
+  effectiveUrl?: string;
+  port?: number;
 };
 
 export type ServiceHistoryEventType =
@@ -54,6 +68,7 @@ export type ProjectState = {
   name: string;
   root: string;
   configPath: string;
+  defaultService?: string;
   services: ServiceRuntimeState[];
   configError?: string;
 };

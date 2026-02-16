@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "smoke:api": "npm run build && node scripts/smoke-api.mjs",
+    "test:e2e": "playwright test",
+    "test:all": "npm run smoke:api && npm run test:e2e"
   },
   "keywords": [
     "process-manager",

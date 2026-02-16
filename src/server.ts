@@ -11,7 +11,7 @@ import {
   writeProjectConfig,
 } from "./config";
 import { ProcessManager } from "./processManager";
-import type { ProjectService, ProjectState, RegistryEntry } from "./types";
+import type { ProjectConfig, ProjectService, ProjectState, RegistryEntry } from "./types";
 
 const PORT = Number(process.env.PORT || 4317);
 const app = express();
@@ -107,6 +107,7 @@ function ensureProjectHasConfig(project: RegistryEntry) {
     ) {
       writeProjectConfig(project.id, {
         name: existing.name || project.name,
+        defaultService: existing.defaultService || seed.service.name,
         services: [seed.service],
       });
     }
@@ -123,6 +124,7 @@ function ensureProjectHasConfig(project: RegistryEntry) {
   try {
     writeProjectConfig(project.id, {
       name: project.name,
+      defaultService: webService.name,
       services: [webService],
     });
   } catch {
@@ -147,14 +149,163 @@ function getProjectById(projectId: string): RegistryEntry | undefined {
   return readRegistry().find((project) => project.id === projectId);
 }
 
-function getService(project: RegistryEntry, serviceName: string): ProjectService {
-  const config = readProjectConfig(project.id);
-  const service = config.services.find((entry) => entry.name === serviceName);
-  if (!service) {
-    throw new Error(`Service '${serviceName}' not found in ${project.root}`);
+function getProjectByPath(projectPath: string): RegistryEntry | undefined {
+  const resolvedPath = path.resolve(projectPath);
+  const projects = readRegistry();
+
+  const exact = projects.find((project) => project.root === resolvedPath);
+  if (exact) {
+    return exact;
   }
 
-  return service;
+  const containing = projects
+    .filter(
+      (project) =>
+        resolvedPath === project.root || resolvedPath.startsWith(`${project.root}${path.sep}`),
+    )
+    .sort((a, b) => b.root.length - a.root.length);
+
+  return containing[0];
+}
+
+type ProjectResolveResult =
+  | {
+      ok: true;
+      project: RegistryEntry;
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      hint?: string;
+    };
+
+function resolveProjectFromLocator(input: {
+  projectId?: unknown;
+  projectPath?: unknown;
+  cwd?: unknown;
+}): ProjectResolveResult {
+  const projectId = typeof input.projectId === "string" ? input.projectId.trim() : "";
+  const projectPathRaw =
+    typeof input.projectPath === "string"
+      ? input.projectPath.trim()
+      : typeof input.cwd === "string"
+        ? input.cwd.trim()
+        : "";
+
+  if (!projectId && !projectPathRaw) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Missing project locator. Provide projectId or projectPath/cwd.",
+      hint: "Use POST /api/process/start with { projectPath: \"/abs/path\" } for path-based start.",
+    };
+  }
+
+  const projectById = projectId ? getProjectById(projectId) : undefined;
+  if (projectId && !projectById) {
+    return {
+      ok: false,
+      status: 404,
+      error: "Project not found",
+      hint: "Call GET /api/state to discover valid projectId values.",
+    };
+  }
+
+  const projectByPath = projectPathRaw ? getProjectByPath(projectPathRaw) : undefined;
+  if (projectPathRaw && !projectByPath) {
+    return {
+      ok: false,
+      status: 404,
+      error: "Project not found for projectPath/cwd",
+      hint: "Add the project first via POST /api/projects, then retry with projectPath/cwd.",
+    };
+  }
+
+  if (projectById && projectByPath && projectById.id !== projectByPath.id) {
+    return {
+      ok: false,
+      status: 400,
+      error: "projectId and projectPath/cwd resolved to different projects",
+      hint: "Pass only one locator, or make both point to the same project.",
+    };
+  }
+
+  const project = projectById || projectByPath;
+  if (!project) {
+    return {
+      ok: false,
+      status: 404,
+      error: "Project not found",
+      hint: "Call GET /api/state to discover registered projects.",
+    };
+  }
+
+  return { ok: true, project };
+}
+
+function findService(config: ProjectConfig, serviceName: string) {
+  return (
+    config.services.find((entry) => entry.name === serviceName) ||
+    config.services.find((entry) => entry.name.toLowerCase() === serviceName.toLowerCase()) ||
+    null
+  );
+}
+
+function resolveService(
+  project: RegistryEntry,
+  requestedServiceName: unknown,
+): {
+  config: ProjectConfig;
+  service: ProjectService;
+  serviceName: string;
+  usedDefaultService: boolean;
+} {
+  const config = readProjectConfig(project.id);
+  if (!config.services.length) {
+    throw new Error(`No services configured for ${project.root}`);
+  }
+
+  const requested =
+    typeof requestedServiceName === "string" ? requestedServiceName.trim() : "";
+  const defaultName = config.defaultService || config.services[0].name;
+  const targetName = requested || defaultName;
+  const service = findService(config, targetName);
+  if (!service) {
+    throw new Error(`Service '${targetName}' not found in ${project.root}`);
+  }
+
+  return {
+    config,
+    service,
+    serviceName: service.name,
+    usedDefaultService: !requested,
+  };
+}
+
+function buildProcessPayload(
+  project: RegistryEntry,
+  service: ProjectService,
+  runInfo: ReturnType<ProcessManager["getRunInfo"]>,
+  usedDefaultService: boolean,
+) {
+  return {
+    projectId: project.id,
+    projectPath: project.root,
+    serviceName: service.name,
+    usedDefaultService,
+    running: runInfo.running,
+    runId: runInfo.runId || runInfo.lastRunId || null,
+    startedAt: runInfo.startedAt || null,
+    terminalMode: runInfo.terminalMode || null,
+    ptyAvailable:
+      typeof runInfo.ptyAvailable === "boolean" ? runInfo.ptyAvailable : null,
+    effectiveUrl: runInfo.effectiveUrl || null,
+    port: typeof runInfo.port === "number" ? runInfo.port : null,
+    warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
+    cmd: service.cmd,
+    cwd: service.cwd || ".",
+  };
 }
 
 function buildProjectState(project: RegistryEntry): ProjectState {
@@ -166,6 +317,7 @@ function buildProjectState(project: RegistryEntry): ProjectState {
       name: config.name || project.name,
       root: project.root,
       configPath,
+      defaultService: config.defaultService,
       services: config.services.map((service) => {
         const runInfo = processes.getRunInfo(project.id, service.name);
         return {
@@ -175,6 +327,12 @@ function buildProjectState(project: RegistryEntry): ProjectState {
           running: runInfo.running,
           runId: runInfo.runId,
           lastRunId: runInfo.lastRunId,
+          startedAt: runInfo.startedAt,
+          terminalMode: runInfo.terminalMode,
+          ptyAvailable: runInfo.ptyAvailable,
+          warnings: runInfo.warnings,
+          effectiveUrl: runInfo.effectiveUrl,
+          port: runInfo.port,
         };
       }),
     };
@@ -257,8 +415,10 @@ app.get("/api/capabilities", (_req, res) => {
         method: "GET",
         path: "/api/history",
         query: {
-          projectId: "required string",
-          serviceName: "required string",
+          projectId: "optional string (projectId or projectPath/cwd required)",
+          projectPath: "optional string (absolute or relative path)",
+          cwd: "optional string alias for projectPath",
+          serviceName: "optional string (defaults to project.defaultService)",
           afterSeq: "optional integer, default 0",
           limit: `optional integer, default 25, max ${processes.historyRetention()}`,
         },
@@ -269,8 +429,10 @@ app.get("/api/capabilities", (_req, res) => {
         method: "GET",
         path: "/api/logs",
         query: {
-          projectId: "required string",
-          serviceName: "required string",
+          projectId: "optional string (projectId or projectPath/cwd required)",
+          projectPath: "optional string (absolute or relative path)",
+          cwd: "optional string alias for projectPath",
+          serviceName: "optional string (defaults to project.defaultService)",
           chars: "optional integer, default 4000",
           runId: "optional string",
         },
@@ -278,7 +440,16 @@ app.get("/api/capabilities", (_req, res) => {
           "Returns terminal output tail. Use for verbose runtime logs, separate from event history.",
       },
       processControl: [
-        { method: "POST", path: "/api/process/start" },
+        {
+          method: "POST",
+          path: "/api/process/start",
+          body: {
+            projectId: "optional string",
+            projectPath: "optional string",
+            cwd: "optional string alias for projectPath",
+            serviceName: "optional string (defaults to project.defaultService)",
+          },
+        },
         { method: "POST", path: "/api/process/stop" },
         { method: "POST", path: "/api/process/restart" },
         { method: "POST", path: "/api/process/stdin" },
@@ -295,7 +466,8 @@ app.get("/api/capabilities", (_req, res) => {
       },
     },
     pollingRecipe: [
-      "Call GET /api/state to discover projectId and serviceName.",
+      "Call GET /api/state to discover projects, defaultService, and runtime metadata.",
+      "Start quickly with POST /api/process/start using projectPath or cwd.",
       "Call GET /api/history?projectId=...&serviceName=... (capture nextAfterSeq).",
       "Poll with afterSeq=<nextAfterSeq> for incremental events.",
       "Use GET /api/logs with runId for verbose output when needed.",
@@ -328,6 +500,8 @@ app.post("/api/projects", (req, res) => {
 app.post("/api/project-config", (req, res) => {
   const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
   const name = typeof req.body?.name === "string" ? req.body.name : undefined;
+  const defaultService =
+    typeof req.body?.defaultService === "string" ? req.body.defaultService : undefined;
   const services = Array.isArray(req.body?.services) ? req.body.services : [];
 
   if (!projectId) {
@@ -340,7 +514,7 @@ app.post("/api/project-config", (req, res) => {
   }
 
   try {
-    writeProjectConfig(projectId, { name, services });
+    writeProjectConfig(projectId, { name, defaultService, services });
     return res.json({ project: buildProjectState(project) });
   } catch (error) {
     return res.status(400).json({
@@ -376,23 +550,41 @@ app.delete("/api/projects/:projectId", (req, res) => {
 });
 
 app.post("/api/process/start", (req, res) => {
-  const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
-  const serviceName =
-    typeof req.body?.serviceName === "string" ? req.body.serviceName : "";
+  let projectResult = resolveProjectFromLocator(req.body || {});
+  if (!projectResult.ok) {
+    const rawProjectPath =
+      typeof req.body?.projectPath === "string"
+        ? req.body.projectPath.trim()
+        : typeof req.body?.cwd === "string"
+          ? req.body.cwd.trim()
+          : "";
 
-  if (!projectId || !serviceName) {
-    return badRequest(res, "Missing projectId or serviceName");
+    if (!req.body?.projectId && rawProjectPath) {
+      const resolvedPath = path.resolve(rawProjectPath);
+      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+        const autoAdded = addProject(resolvedPath);
+        ensureProjectHasConfig(autoAdded);
+        projectResult = { ok: true, project: autoAdded };
+      }
+    }
   }
 
-  const project = getProjectById(projectId);
-  if (!project) {
-    return res.status(404).json({ error: "Project not found" });
+  if (!projectResult.ok) {
+    return res
+      .status(projectResult.status)
+      .json({ error: projectResult.error, hint: projectResult.hint });
   }
 
   try {
-    const service = getService(project, serviceName);
+    const { project } = projectResult;
+    const { service, usedDefaultService } = resolveService(project, req.body?.serviceName);
     processes.start(project, service);
-    return res.json({ ok: true });
+    const runInfo = processes.getRunInfo(project.id, service.name);
+    return res.json({
+      ok: true,
+      action: "start",
+      process: buildProcessPayload(project, service, runInfo, usedDefaultService),
+    });
   } catch (error) {
     return res.status(400).json({
       error: error instanceof Error ? error.message : "Failed to start process",
@@ -401,36 +593,48 @@ app.post("/api/process/start", (req, res) => {
 });
 
 app.post("/api/process/stop", (req, res) => {
-  const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
-  const serviceName =
-    typeof req.body?.serviceName === "string" ? req.body.serviceName : "";
-
-  if (!projectId || !serviceName) {
-    return badRequest(res, "Missing projectId or serviceName");
-  }
-
-  const stopped = processes.stop(projectId, serviceName);
-  return res.json({ ok: stopped });
-});
-
-app.post("/api/process/restart", (req, res) => {
-  const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
-  const serviceName =
-    typeof req.body?.serviceName === "string" ? req.body.serviceName : "";
-
-  if (!projectId || !serviceName) {
-    return badRequest(res, "Missing projectId or serviceName");
-  }
-
-  const project = getProjectById(projectId);
-  if (!project) {
-    return res.status(404).json({ error: "Project not found" });
+  const projectResult = resolveProjectFromLocator(req.body || {});
+  if (!projectResult.ok) {
+    return res
+      .status(projectResult.status)
+      .json({ error: projectResult.error, hint: projectResult.hint });
   }
 
   try {
-    const service = getService(project, serviceName);
+    const { project } = projectResult;
+    const { service, usedDefaultService } = resolveService(project, req.body?.serviceName);
+    const stopped = processes.stop(project.id, service.name);
+    const runInfo = processes.getRunInfo(project.id, service.name);
+    return res.json({
+      ok: stopped,
+      action: "stop",
+      process: buildProcessPayload(project, service, runInfo, usedDefaultService),
+    });
+  } catch (error) {
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : "Failed to stop process",
+    });
+  }
+});
+
+app.post("/api/process/restart", (req, res) => {
+  const projectResult = resolveProjectFromLocator(req.body || {});
+  if (!projectResult.ok) {
+    return res
+      .status(projectResult.status)
+      .json({ error: projectResult.error, hint: projectResult.hint });
+  }
+
+  try {
+    const { project } = projectResult;
+    const { service, usedDefaultService } = resolveService(project, req.body?.serviceName);
     processes.restart(project, service);
-    return res.json({ ok: true });
+    const runInfo = processes.getRunInfo(project.id, service.name);
+    return res.json({
+      ok: true,
+      action: "restart",
+      process: buildProcessPayload(project, service, runInfo, usedDefaultService),
+    });
   } catch (error) {
     return res.status(400).json({
       error: error instanceof Error ? error.message : "Failed to restart process",
@@ -439,70 +643,112 @@ app.post("/api/process/restart", (req, res) => {
 });
 
 app.post("/api/process/stdin", (req, res) => {
-  const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : "";
-  const serviceName =
-    typeof req.body?.serviceName === "string" ? req.body.serviceName : "";
-  const input = typeof req.body?.input === "string" ? req.body.input : "";
-
-  if (!projectId || !serviceName) {
-    return badRequest(res, "Missing projectId or serviceName");
+  const projectResult = resolveProjectFromLocator(req.body || {});
+  if (!projectResult.ok) {
+    return res
+      .status(projectResult.status)
+      .json({ error: projectResult.error, hint: projectResult.hint });
   }
 
-  const ok = processes.writeInput(projectId, serviceName, input);
-  return res.json({ ok });
+  let service: ProjectService;
+  let usedDefaultService = false;
+  try {
+    const resolved = resolveService(projectResult.project, req.body?.serviceName);
+    service = resolved.service;
+    usedDefaultService = resolved.usedDefaultService;
+  } catch (error) {
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : "Failed to resolve service",
+    });
+  }
+
+  const input = typeof req.body?.input === "string" ? req.body.input : "";
+  const ok = processes.writeInput(projectResult.project.id, service.name, input);
+  const runInfo = processes.getRunInfo(projectResult.project.id, service.name);
+  return res.json({
+    ok,
+    action: "stdin",
+    process: buildProcessPayload(
+      projectResult.project,
+      service,
+      runInfo,
+      usedDefaultService,
+    ),
+  });
 });
 
 app.get("/api/logs", (req, res) => {
-  const projectId =
-    typeof req.query.projectId === "string" ? req.query.projectId : "";
-  const serviceName =
-    typeof req.query.serviceName === "string" ? req.query.serviceName : "";
+  const projectResult = resolveProjectFromLocator({
+    projectId: req.query.projectId,
+    projectPath: req.query.projectPath,
+    cwd: req.query.cwd,
+  });
+  if (!projectResult.ok) {
+    return res
+      .status(projectResult.status)
+      .json({ error: projectResult.error, hint: projectResult.hint });
+  }
+
+  let resolvedService: ReturnType<typeof resolveService>;
+  try {
+    resolvedService = resolveService(projectResult.project, req.query.serviceName);
+  } catch (error) {
+    return res.status(404).json({
+      error: error instanceof Error ? error.message : "Service not found",
+      hint: "Call GET /api/state and inspect project.services[].name/defaultService.",
+    });
+  }
+
   const charsRaw =
     typeof req.query.chars === "string" ? Number(req.query.chars) : 4000;
   const runId = typeof req.query.runId === "string" ? req.query.runId.trim() : "";
   const chars = Number.isFinite(charsRaw) ? Math.min(Math.max(charsRaw, 200), 50_000) : 4000;
-
-  if (!projectId || !serviceName) {
-    return badRequest(res, "Missing projectId or serviceName");
-  }
-
-  const runInfo = processes.getRunInfo(projectId, serviceName);
+  const runInfo = processes.getRunInfo(
+    projectResult.project.id,
+    resolvedService.service.name,
+  );
   return res.json({
-    projectId,
-    serviceName,
+    projectId: projectResult.project.id,
+    projectPath: projectResult.project.root,
+    serviceName: resolvedService.service.name,
+    usedDefaultService: resolvedService.usedDefaultService,
     chars,
     runId: runInfo.runId || runInfo.lastRunId || null,
-    output: processes.getLogTail(projectId, serviceName, chars, runId || undefined),
+    running: runInfo.running,
+    terminalMode: runInfo.terminalMode || null,
+    ptyAvailable:
+      typeof runInfo.ptyAvailable === "boolean" ? runInfo.ptyAvailable : null,
+    effectiveUrl: runInfo.effectiveUrl || null,
+    port: typeof runInfo.port === "number" ? runInfo.port : null,
+    warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
+    output: processes.getLogTail(
+      projectResult.project.id,
+      resolvedService.service.name,
+      chars,
+      runId || undefined,
+    ),
   });
 });
 
 app.get("/api/history", (req, res) => {
-  const projectId =
-    typeof req.query.projectId === "string" ? req.query.projectId.trim() : "";
-  const serviceName =
-    typeof req.query.serviceName === "string" ? req.query.serviceName.trim() : "";
-
-  if (!projectId || !serviceName) {
-    return res.status(400).json({
-      error: "Missing projectId or serviceName",
-      hint: "Use /api/history?projectId=<id>&serviceName=<name>",
-    });
+  const projectResult = resolveProjectFromLocator({
+    projectId: req.query.projectId,
+    projectPath: req.query.projectPath,
+    cwd: req.query.cwd,
+  });
+  if (!projectResult.ok) {
+    return res
+      .status(projectResult.status)
+      .json({ error: projectResult.error, hint: projectResult.hint });
   }
 
-  const project = getProjectById(projectId);
-  if (!project) {
-    return res.status(404).json({
-      error: "Project not found",
-      hint: "Call GET /api/state to discover valid projectId values.",
-    });
-  }
-
+  let resolvedService: ReturnType<typeof resolveService>;
   try {
-    getService(project, serviceName);
+    resolvedService = resolveService(projectResult.project, req.query.serviceName);
   } catch (error) {
     return res.status(404).json({
       error: error instanceof Error ? error.message : "Service not found",
-      hint: "Call GET /api/state and inspect project.services[].name.",
+      hint: "Call GET /api/state and inspect project.services[].name/defaultService.",
     });
   }
 
@@ -528,14 +774,25 @@ app.get("/api/history", (req, res) => {
 
   const afterSeq = afterSeqResult.value;
   const limit = limitResult.value;
+  const projectId = projectResult.project.id;
+  const serviceName = resolvedService.service.name;
   const runInfo = processes.getRunInfo(projectId, serviceName);
   const history = processes.getHistory(projectId, serviceName, afterSeq, limit);
 
   return res.json({
     projectId,
+    projectPath: projectResult.project.root,
     serviceName,
+    usedDefaultService: resolvedService.usedDefaultService,
     running: runInfo.running,
     runId: runInfo.runId || runInfo.lastRunId || null,
+    startedAt: runInfo.startedAt || null,
+    terminalMode: runInfo.terminalMode || null,
+    ptyAvailable:
+      typeof runInfo.ptyAvailable === "boolean" ? runInfo.ptyAvailable : null,
+    effectiveUrl: runInfo.effectiveUrl || null,
+    port: typeof runInfo.port === "number" ? runInfo.port : null,
+    warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
     retention: processes.historyRetention(),
     afterSeq,
     limit,

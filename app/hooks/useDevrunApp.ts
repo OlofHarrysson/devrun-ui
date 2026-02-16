@@ -22,7 +22,6 @@ import type {
   ProjectServiceConfigInput,
   ProjectServiceState,
   ProjectState,
-  RuntimeStateSnapshot,
   SocketMessage,
   TerminalEntry,
   XtermModules,
@@ -97,12 +96,6 @@ export function useDevrunApp(): DevrunAppModel {
   const pollHandleRef = useRef<number | null>(null);
   const terminalsRef = useRef<Map<string, TerminalEntry>>(new Map());
   const xtermModulesRef = useRef<Promise<XtermModules> | null>(null);
-  const stateRef = useRef<RuntimeStateSnapshot>({
-    projects: [],
-    selectedProjectId: null,
-    selectedServiceByProject: {},
-    activeTerminalKey: null,
-  });
 
   const selectedProject = useMemo(
     () => getProject(projects, selectedProjectId),
@@ -120,14 +113,34 @@ export function useDevrunApp(): DevrunAppModel {
       : "";
   const selectedHistoryEntry = selectedHistoryKey ? historyByService[selectedHistoryKey] || null : null;
 
-  useEffect(() => {
-    stateRef.current = {
-      projects,
-      selectedProjectId,
-      selectedServiceByProject,
-      activeTerminalKey,
+  function getRuntimeSnapshot() {
+    const snapshot = useDevrunStore.getState();
+    return {
+      projects: snapshot.projects,
+      selectedProjectId: snapshot.selectedProjectId,
+      selectedServiceByProject: snapshot.selectedServiceByProject,
+      activeTerminalKey: snapshot.activeTerminalKey,
     };
-  }, [projects, selectedProjectId, selectedServiceByProject, activeTerminalKey]);
+  }
+
+  function mapsEqual(
+    left: Record<string, string>,
+    right: Record<string, string>,
+  ) {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+
+    for (const key of leftKeys) {
+      if (left[key] !== right[key]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
 
   async function loadXtermModules(): Promise<XtermModules> {
     if (!xtermModulesRef.current) {
@@ -363,7 +376,7 @@ export function useDevrunApp(): DevrunAppModel {
       entry.lastNotice = "";
       writeNotice(entry, "connected to running process");
       sendResize(entry);
-      if (entry.key === stateRef.current.activeTerminalKey) {
+      if (entry.key === useDevrunStore.getState().activeTerminalKey) {
         entry.term?.focus();
       }
     });
@@ -504,7 +517,7 @@ export function useDevrunApp(): DevrunAppModel {
   function isServiceRunning(
     projectId: string,
     serviceName: string,
-    sourceProjects = stateRef.current.projects,
+    sourceProjects = useDevrunStore.getState().projects,
   ): boolean {
     const service = getService(sourceProjects, projectId, serviceName);
     return Boolean(service?.running);
@@ -518,7 +531,6 @@ export function useDevrunApp(): DevrunAppModel {
     const entry = await ensureTerminalEntry(project, service);
 
     setActiveTerminalKey(entry.key);
-    stateRef.current.activeTerminalKey = entry.key;
     bumpTerminalVersion();
 
     const running = isServiceRunning(project.id, service.name);
@@ -540,7 +552,7 @@ export function useDevrunApp(): DevrunAppModel {
   }
 
   async function openSelectedServiceTerminal(options: OpenTerminalOptions = {}) {
-    const snapshot = stateRef.current;
+    const snapshot = getRuntimeSnapshot();
     const project = getProject(snapshot.projects, snapshot.selectedProjectId);
     const service = resolveSelectedService(project, snapshot.selectedServiceByProject);
     if (!project || !service) {
@@ -628,7 +640,7 @@ export function useDevrunApp(): DevrunAppModel {
   }
 
   async function refreshSelectedServiceHistory() {
-    const snapshot = stateRef.current;
+    const snapshot = getRuntimeSnapshot();
     const project = getProject(snapshot.projects, snapshot.selectedProjectId);
     const service = resolveSelectedService(project, snapshot.selectedServiceByProject);
     await refreshHistoryFor(project, service);
@@ -638,7 +650,7 @@ export function useDevrunApp(): DevrunAppModel {
     const payload = await devrunApi.state();
     const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
 
-    const previous = stateRef.current;
+    const previous = getRuntimeSnapshot();
     const normalized = normalizeSelection(
       nextProjects,
       previous.selectedProjectId,
@@ -646,32 +658,50 @@ export function useDevrunApp(): DevrunAppModel {
     );
 
     setProjects(nextProjects);
-    setSelectedProjectId(normalized.selectedProjectId);
-    setSelectedServiceByProject(normalized.selectedServiceByProject);
-
-    stateRef.current = {
-      projects: nextProjects,
-      selectedProjectId: normalized.selectedProjectId,
-      selectedServiceByProject: normalized.selectedServiceByProject,
-      activeTerminalKey: stateRef.current.activeTerminalKey,
-    };
+    if (previous.selectedProjectId !== normalized.selectedProjectId) {
+      setSelectedProjectId(normalized.selectedProjectId);
+    }
+    if (!mapsEqual(previous.selectedServiceByProject, normalized.selectedServiceByProject)) {
+      setSelectedServiceByProject(normalized.selectedServiceByProject);
+    }
 
     syncTerminalEntries(nextProjects);
+
+    const validHistoryKeys = new Set<string>();
+    for (const project of nextProjects) {
+      for (const service of project.services) {
+        validHistoryKeys.add(serviceKey(project.id, service.name));
+      }
+    }
+    setHistoryByService((previousHistory) => {
+      let changed = false;
+      const pruned: Record<string, HistoryEntry | undefined> = {};
+      for (const [key, value] of Object.entries(previousHistory)) {
+        if (validHistoryKeys.has(key)) {
+          pruned[key] = value;
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? pruned : previousHistory;
+    });
 
     const project = getProject(nextProjects, normalized.selectedProjectId);
     const service = resolveSelectedService(project, normalized.selectedServiceByProject);
     if (project && service) {
       const key = serviceKey(project.id, service.name);
-      setActiveTerminalKey(key);
-      stateRef.current.activeTerminalKey = key;
+      if (previous.activeTerminalKey !== key) {
+        setActiveTerminalKey(key);
+      }
       if (!terminalsRef.current.has(key)) {
         void openTerminal(project, service).catch(() => {
           // best effort during polling
         });
       }
     } else {
-      setActiveTerminalKey(null);
-      stateRef.current.activeTerminalKey = null;
+      if (previous.activeTerminalKey !== null) {
+        setActiveTerminalKey(null);
+      }
     }
 
     await refreshSelectedServiceHistory();
@@ -686,7 +716,7 @@ export function useDevrunApp(): DevrunAppModel {
       await devrunApi.processAction(action, project.id, service.name);
       await refreshState();
 
-      const snapshot = stateRef.current;
+      const snapshot = getRuntimeSnapshot();
       const currentProject = getProject(snapshot.projects, project.id) || project;
       const currentService = getService(snapshot.projects, project.id, service.name) || service;
 
@@ -845,7 +875,8 @@ export function useDevrunApp(): DevrunAppModel {
     project: ProjectState,
     preferredServiceName?: string,
   ): Promise<void> {
-    const selection = { ...stateRef.current.selectedServiceByProject };
+    const snapshot = getRuntimeSnapshot();
+    const selection = { ...snapshot.selectedServiceByProject };
     const preferred =
       project.services.find((service) => service.name === preferredServiceName) || null;
     const service = preferred || resolveSelectedService(project, selection);
@@ -856,28 +887,17 @@ export function useDevrunApp(): DevrunAppModel {
 
     setSelectedProjectId(project.id);
     setSelectedServiceByProject({
-      ...stateRef.current.selectedServiceByProject,
+      ...snapshot.selectedServiceByProject,
       ...(service ? { [project.id]: service.name } : {}),
     });
 
-    stateRef.current = {
-      ...stateRef.current,
-      selectedProjectId: project.id,
-      selectedServiceByProject: {
-        ...stateRef.current.selectedServiceByProject,
-        ...(service ? { [project.id]: service.name } : {}),
-      },
-    };
-
     if (!service) {
       setActiveTerminalKey(null);
-      stateRef.current.activeTerminalKey = null;
       return;
     }
 
     const key = serviceKey(project.id, service.name);
     setActiveTerminalKey(key);
-    stateRef.current.activeTerminalKey = key;
 
     await openTerminal(project, service).catch((error) => {
       window.alert(error instanceof Error ? error.message : "Failed to open terminal");

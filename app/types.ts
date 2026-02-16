@@ -70,13 +70,6 @@ export interface ProcessActionResponse {
   ok?: boolean;
 }
 
-export interface RuntimeStateSnapshot {
-  projects: ProjectState[];
-  selectedProjectId: string | null;
-  selectedServiceByProject: Record<string, string>;
-  activeTerminalKey: string | null;
-}
-
 export interface TerminalEntry {
   key: string;
   projectId: string;

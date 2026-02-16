@@ -5,4 +5,19 @@
 }
 
 @source "../../app/**/*.{js,jsx,ts,tsx}";
-@import "./legacy.css";
+
+@layer base {
+  body {
+    margin: 0;
+    font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+    background:
+      radial-gradient(circle at 8% 8%, color-mix(in oklab, hsl(var(--p)) 18%, transparent) 0%, transparent 38%),
+      radial-gradient(circle at 88% 0%, color-mix(in oklab, hsl(var(--s)) 16%, transparent) 0%, transparent 36%),
+      hsl(var(--b2));
+  }
+
+  code,
+  pre {
+    font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+  }
+}

@@ -14,9 +14,11 @@ export function Sidebar({
   onSelectProject,
 }: SidebarProps) {
   return (
-    <aside className="sidebar">
-      <div className="sidebar-top">
-        <h1>Devrun UI</h1>
+    <aside className="flex flex-col gap-3 border-b border-base-300 bg-base-100/90 p-4 md:min-h-screen md:border-r md:border-b-0">
+      <div className="grid gap-2.5">
+        <h1 className="m-0 text-[0.8rem] font-extrabold uppercase tracking-[0.15em] text-primary">
+          Devrun UI
+        </h1>
         <button
           id="add-project-btn"
           className="btn btn-primary btn-sm"
@@ -27,7 +29,7 @@ export function Sidebar({
           Add Project
         </button>
       </div>
-      <div id="projects" className="projects">
+      <div id="projects" className="grid min-h-0 gap-2 overflow-auto">
         {!projects.length ? (
           <div className="alert alert-info alert-soft text-sm">
             <span>No projects yet.</span>
@@ -40,7 +42,7 @@ export function Sidebar({
             return (
               <button
                 key={project.id}
-                className={`project-item btn btn-block normal-case justify-between h-auto px-3 py-2 min-h-0 ${
+                className={`project-item btn btn-block grid h-auto min-h-0 grid-cols-[1fr_auto] items-start justify-between gap-2 px-3 py-2 normal-case ${
                   isActive
                     ? "active btn-primary text-primary-content"
                     : "btn-ghost border border-base-300"
@@ -49,8 +51,10 @@ export function Sidebar({
                   void onSelectProject(project);
                 }}
               >
-                <div className="project-item-name">{project.name}</div>
-                <div className="project-item-meta badge badge-sm badge-ghost">
+                <div className="project-item-name max-w-[175px] truncate text-left font-bold leading-tight">
+                  {project.name}
+                </div>
+                <div className="project-item-meta badge badge-sm badge-ghost self-center text-[0.65rem]">
                   {runningCount}/{project.services.length} running
                 </div>
               </button>

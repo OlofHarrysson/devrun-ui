@@ -10,7 +10,7 @@ export default function HomePage() {
   const app = useDevrunApp();
 
   return (
-    <div className="layout">
+    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[296px_1fr]">
       <Sidebar
         projects={app.projects}
         selectedProjectId={app.selectedProjectId}
@@ -18,8 +18,8 @@ export default function HomePage() {
         onSelectProject={app.selectProject}
       />
 
-      <main className="main">
-        <section className="workspace-top">
+      <main className="grid min-h-screen min-w-0 grid-rows-[auto_1fr] gap-2.5 p-3.5">
+        <section className="grid gap-2.5">
           <ProjectHeader
             selectedProject={app.selectedProject}
             onConfigureProject={app.configureProject}

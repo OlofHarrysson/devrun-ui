@@ -24,38 +24,45 @@ export function CommandBar({
   onAction,
 }: CommandBarProps) {
   return (
-    <div id="command-bar" className="command-bar">
+    <div
+      id="command-bar"
+      className="rounded-[calc(var(--radius-box)+0.1rem)] border border-base-300 bg-base-100 p-3 shadow-sm md:p-3.5"
+    >
       {!selectedProject ? (
-        <div className="command-empty alert alert-info alert-soft text-sm">
+        <div className="alert alert-info alert-soft grid gap-1 text-sm">
           Select a project to start.
         </div>
       ) : selectedProject.configError ? (
-        <div className="command-empty alert alert-warning alert-soft">
-          <div className="command-empty-title">Project not configured</div>
-          <div className="command-empty-subtitle">{selectedProject.configPath}</div>
-          <div className="error">{selectedProject.configError}</div>
+        <div className="alert alert-warning alert-soft grid gap-1">
+          <div className="text-sm font-bold">Project not configured</div>
+          <div className="font-mono text-xs text-base-content/70">{selectedProject.configPath}</div>
+          <div className="text-xs text-error">{selectedProject.configError}</div>
         </div>
       ) : !selectedProject.services.length || !selectedService ? (
-        <div className="command-empty alert alert-info alert-soft text-sm">
+        <div className="alert alert-info alert-soft grid gap-1 text-sm">
           No services configured yet. Click Configure.
         </div>
       ) : (
-        <div className="command-bar-inner">
-          <div className="command-left">
-            <div className="command-service-name">Service: {selectedService.name}</div>
-            <div className="command-meta">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="grid min-w-[300px] max-w-full gap-2">
+            <div className="text-xs font-semibold text-base-content/80">
+              Service: {selectedService.name}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`command-status ${lifecycleBadgeClass(
+                className={`lowercase font-bold ${lifecycleBadgeClass(
                   serviceLifecycleStatus(selectedService),
                 )}`}
               >
                 {serviceLifecycleStatus(selectedService)}
               </span>
-              <code className="command-preview">{selectedService.cmd}</code>
+              <code className="inline-block max-w-full truncate rounded-full border border-base-300 bg-base-200 px-2.5 py-1 font-mono text-xs text-base-content/80 sm:max-w-[76ch]">
+                {selectedService.cmd}
+              </code>
             </div>
           </div>
 
-          <div className="command-actions">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <button
               id="cmd-start-btn"
               className="btn btn-sm btn-primary"

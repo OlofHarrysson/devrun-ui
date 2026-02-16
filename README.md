@@ -41,8 +41,8 @@ npm run dev
 - Tailwind CSS v4 (`tailwindcss` + `@tailwindcss/postcss`)
 - daisyUI v5
 - App logic split into typed hooks/components (`app/hooks`, `app/components`, `app/lib`)
-- Source stylesheet: `src/styles/main.css`
-- Legacy handcrafted layout styles are preserved in `src/styles/legacy.css`.
+- Single global stylesheet: `src/styles/main.css` (base/theme/fonts only)
+- Component styling is done in Tailwind/daisy class names in `app/components/*.tsx`.
 
 ## Project config (simple mode)
 

@@ -12,16 +12,21 @@ export function ProjectHeader({
   onRemoveProject,
 }: ProjectHeaderProps) {
   return (
-    <div id="project-header" className="project-header">
+    <div
+      id="project-header"
+      className="flex items-center justify-between gap-3 rounded-[calc(var(--radius-box)+0.1rem)] border border-base-300 bg-base-100 p-3 shadow-sm md:p-3.5"
+    >
       {!selectedProject ? (
-        <div className="project-title text-base-content/70">No project selected</div>
+        <div className="text-xl leading-tight text-base-content/70">No project selected</div>
       ) : (
         <>
           <div>
-            <h2 className="project-title">{selectedProject.name}</h2>
-            <div className="project-subtitle">{selectedProject.root}</div>
+            <h2 className="m-0 text-xl leading-tight">{selectedProject.name}</h2>
+            <div className="mt-1 max-w-full truncate font-mono text-xs text-base-content/70">
+              {selectedProject.root}
+            </div>
           </div>
-          <div className="service-actions">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               className="btn btn-sm btn-outline"
               onClick={() => {

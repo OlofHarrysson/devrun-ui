@@ -43,8 +43,8 @@ export function TerminalPanel({
   attachTerminalContainer,
 }: TerminalPanelProps) {
   return (
-    <section className="terminal-panel">
-      <div id="terminal-tabs" className="terminal-tabs">
+    <section className="grid min-h-0 grid-rows-[auto_1fr] gap-2">
+      <div id="terminal-tabs" className="flex gap-2 overflow-x-auto pb-0.5">
         {selectedProject && !selectedProject.configError && selectedProject.services.length
           ? selectedProject.services.map((service) => {
               const key = serviceKey(selectedProject.id, service.name);
@@ -55,7 +55,7 @@ export function TerminalPanel({
               return (
                 <button
                   key={key}
-                  className={`terminal-tab btn btn-sm normal-case justify-between min-h-0 ${
+                  className={`terminal-tab btn btn-sm min-h-0 min-w-[160px] items-center justify-between gap-2 normal-case ${
                     isActive
                       ? "active btn-primary text-primary-content"
                       : "btn-ghost border border-base-300"
@@ -64,8 +64,12 @@ export function TerminalPanel({
                     void onSelectService(service.name);
                   }}
                 >
-                  <span className="terminal-tab-title">{service.name}</span>
-                  <span className={`terminal-tab-status ${connectionBadgeClass(connectionState)}`}>
+                  <span className="terminal-tab-title max-w-[180px] truncate text-left">
+                    {service.name}
+                  </span>
+                  <span
+                    className={`terminal-tab-status text-[0.65rem] ${connectionBadgeClass(connectionState)}`}
+                  >
                     {label}
                   </span>
                 </button>
@@ -74,15 +78,18 @@ export function TerminalPanel({
           : null}
       </div>
 
-      <div className="terminal-workspace">
-        <div id="terminal-stack" className="terminal-stack">
+      <div className="grid min-h-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div
+          id="terminal-stack"
+          className="relative min-h-[320px] overflow-hidden rounded-[calc(var(--radius-box)+0.1rem)] border border-slate-800 bg-slate-950 shadow-sm"
+        >
           {terminalEmptyMessage ? (
-            <div className="terminal-empty text-base-content/60">{terminalEmptyMessage}</div>
+            <div className="terminal-empty p-3.5 text-sm text-base-content/60">{terminalEmptyMessage}</div>
           ) : null}
           {terminalKeys.map((key) => (
             <div
               key={key}
-              className={`terminal-view ${activeTerminalKey === key ? "active" : ""}`}
+              className={`terminal-view absolute inset-0 p-2 ${activeTerminalKey === key ? "block" : "hidden"}`}
               ref={(node) => {
                 attachTerminalContainer(key, node);
               }}

@@ -26,6 +26,9 @@ const handleNext = nextApp.getRequestHandler();
 
 app.use(express.json({ limit: "1mb" }));
 
+const LEGACY_LOCAL_STORAGE_CMD =
+  "NODE_OPTIONS='--localstorage-file=.devrun-localstorage.json' npm run dev";
+
 const DEFAULT_PROJECTS = [
   {
     name: "devrun-ui",
@@ -40,7 +43,7 @@ const DEFAULT_PROJECTS = [
     root: "/Users/olof/git/youtube-looper",
     service: {
       name: "web",
-      cmd: "NODE_OPTIONS='--localstorage-file=.devrun-localstorage.json' npm run dev",
+      cmd: "npm run dev",
       cwd: "website",
     } satisfies ProjectService,
   },
@@ -105,7 +108,8 @@ function ensureProjectHasConfig(project: RegistryEntry) {
       existing.services.length === 1 &&
       existing.services[0]?.name === "web" &&
       existing.services[0]?.cwd === "website" &&
-      existing.services[0]?.cmd === "npm run dev"
+      (existing.services[0]?.cmd === "npm run dev" ||
+        existing.services[0]?.cmd === LEGACY_LOCAL_STORAGE_CMD)
     ) {
       writeProjectConfig(project.id, {
         name: existing.name || project.name,

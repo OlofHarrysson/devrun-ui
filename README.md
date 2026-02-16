@@ -59,6 +59,7 @@ npm run dev
   - otherwise `npm run start` if a `start` script exists
 - You can override via the **Configure** button in the UI.
 - Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
+- Devrun injects `NODE_OPTIONS=--localstorage-file=<...>` when missing, with files stored under `.devrun/runtime/localstorage/` so transient localStorage artifacts stay out of managed project repos.
 
 Service `cwd` is optional (relative to project root):
 

@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { spawn as spawnChild } from "child_process";
@@ -5,6 +6,7 @@ import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
 import type { ProjectService, RegistryEntry, ServiceStatus } from "./types";
 import { ServiceHistoryStore } from "./historyStore";
+import { DEVRUN_HOME } from "./storage";
 
 type ProcessRunner = {
   write: (input: string) => void;
@@ -73,6 +75,7 @@ const MAX_LOG_CHARS = 120_000;
 const MAX_RECENT_LOGS = 100;
 const HISTORY_RETENTION = 100;
 const READY_GRACE_MS = 2500;
+const LOCAL_STORAGE_RUNTIME_DIR = path.join(DEVRUN_HOME, "runtime", "localstorage");
 
 function makeKey(projectId: string, serviceName: string) {
   return `${projectId}::${serviceName}`;
@@ -162,10 +165,36 @@ function hasReadySignal(chunk: string) {
   );
 }
 
-function buildChildEnv() {
+function sanitizePathSegment(value: string) {
+  const cleaned = value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || "default";
+}
+
+function ensureNodeLocalStorageFile(
+  env: NodeJS.ProcessEnv,
+  projectId: string,
+  serviceName: string,
+) {
+  const existing = env.NODE_OPTIONS || "";
+  if (/(?:^|\s)--localstorage-file(?:=|\s|$)/.test(existing)) {
+    return;
+  }
+
+  fs.mkdirSync(LOCAL_STORAGE_RUNTIME_DIR, { recursive: true });
+  const fileName = `${sanitizePathSegment(projectId)}--${sanitizePathSegment(serviceName)}.sqlite`;
+  const filePath = path.join(LOCAL_STORAGE_RUNTIME_DIR, fileName);
+  const option = `--localstorage-file=${filePath}`;
+  env.NODE_OPTIONS = existing.trim() ? `${existing.trim()} ${option}` : option;
+}
+
+function buildChildEnv(projectId: string, serviceName: string) {
   const env: NodeJS.ProcessEnv = { ...process.env };
   // Avoid inheriting server port into child apps (can collide with Devrun itself).
   delete env.PORT;
+  ensureNodeLocalStorageFile(env, projectId, serviceName);
   return env;
 }
 
@@ -195,13 +224,15 @@ function createPtyRunner(
   shell: string,
   command: string,
   cwd: string,
+  projectId: string,
+  serviceName: string,
 ): ProcessRunner {
   const pty = spawnPty(shell, ["-lc", command], {
     name: "xterm-color",
     cols: 120,
     rows: 32,
     cwd,
-    env: buildChildEnv(),
+    env: buildChildEnv(projectId, serviceName),
   });
 
   return {
@@ -231,10 +262,12 @@ function createPipeRunner(
   shell: string,
   command: string,
   cwd: string,
+  projectId: string,
+  serviceName: string,
 ): ProcessRunner {
   const child = spawnChild(shell, ["-lc", command], {
     cwd,
-    env: buildChildEnv(),
+    env: buildChildEnv(projectId, serviceName),
     stdio: "pipe",
     detached: process.platform !== "win32",
   });
@@ -460,9 +493,9 @@ export class ProcessManager {
     let modeNotice = "";
     let ptyWarning = "";
     try {
-      runner = createPtyRunner(shell, service.cmd, cwd);
+      runner = createPtyRunner(shell, service.cmd, cwd, project.id, service.name);
     } catch (error) {
-      runner = createPipeRunner(shell, service.cmd, cwd);
+      runner = createPipeRunner(shell, service.cmd, cwd, project.id, service.name);
       const reason =
         error instanceof Error ? error.message : "Failed to initialize PTY";
       ptyWarning = `PTY unavailable, using pipe mode: ${reason}`;

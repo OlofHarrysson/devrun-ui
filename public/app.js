@@ -150,6 +150,19 @@
     return Boolean(service?.running);
   }
 
+  function serviceLifecycleStatus(service) {
+    if (!service) {
+      return "stopped";
+    }
+    if (typeof service.status === "string" && service.status) {
+      return service.status;
+    }
+    if (!service.running) {
+      return "stopped";
+    }
+    return service.ready === false ? "starting" : "ready";
+  }
+
   function ensureSelectedProject() {
     if (!state.projects.length) {
       state.selectedProjectId = null;
@@ -541,6 +554,14 @@
 
     if (event.type === "exit") {
       const code = typeof data.exitCode === "number" ? data.exitCode : "?";
+      const replaced = data.replacedByRestart === true;
+      const stopRequested = data.stopRequested === true;
+      if (replaced) {
+        return `exit code ${code} (replaced by restart)`;
+      }
+      if (stopRequested) {
+        return `exit code ${code} (stop requested)`;
+      }
       return `exit code ${code}`;
     }
 
@@ -790,6 +811,13 @@
     commandBarEl.innerHTML = "";
     const bar = document.createElement("div");
     bar.className = "command-bar-inner";
+    const lifecycleStatus = serviceLifecycleStatus(service);
+    const statusClassByValue = {
+      ready: "status-ready",
+      starting: "status-starting",
+      stopped: "status-stopped",
+      error: "status-error",
+    };
 
     const leftControls = document.createElement("div");
     leftControls.className = "command-left";
@@ -800,8 +828,8 @@
     const commandMeta = document.createElement("div");
     commandMeta.className = "command-meta";
     commandMeta.innerHTML = `
-      <span class="command-status ${service.running ? "status-running" : "status-stopped"}">
-        ${service.running ? "running" : "stopped"}
+      <span class="command-status ${statusClassByValue[lifecycleStatus] || "status-stopped"}">
+        ${escapeHtml(lifecycleStatus)}
       </span>
       <code class="command-preview">${escapeHtml(service.cmd)}</code>
     `;

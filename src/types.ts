@@ -18,12 +18,15 @@ export type ProjectConfig = {
 };
 
 export type TerminalMode = "pty" | "pipe";
+export type ServiceStatus = "starting" | "ready" | "stopped" | "error";
 
 export type ServiceRuntimeState = {
   name: string;
   cmd: string;
   cwd?: string;
   running: boolean;
+  status?: ServiceStatus;
+  ready?: boolean;
   runId?: string;
   lastRunId?: string;
   startedAt?: string;
@@ -32,6 +35,9 @@ export type ServiceRuntimeState = {
   warnings?: string[];
   effectiveUrl?: string;
   port?: number;
+  lastExitCode?: number;
+  exitWasRestartReplace?: boolean;
+  exitWasStopRequest?: boolean;
 };
 
 export type RunningService = {
@@ -39,6 +45,8 @@ export type RunningService = {
   serviceName: string;
   startedAt: string;
   runId: string;
+  status: ServiceStatus;
+  ready: boolean;
   terminalMode: TerminalMode;
   ptyAvailable: boolean;
   warnings: string[];

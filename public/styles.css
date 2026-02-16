@@ -189,16 +189,29 @@ body {
   border: 1px solid transparent;
 }
 
-.status-running {
+.status-running,
+.status-ready {
   color: var(--ok);
   background: #dcfce7;
   border-color: #86efac;
+}
+
+.status-starting {
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-color: #93c5fd;
 }
 
 .status-stopped {
   color: #334155;
   background: #f1f5f9;
   border-color: #cbd5e1;
+}
+
+.status-error {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 
 .command-preview {

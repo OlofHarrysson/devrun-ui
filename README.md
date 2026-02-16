@@ -14,7 +14,7 @@ Local GUI to run long-lived dev services per project, with real PTY terminals in
 - Service tabs are project-scoped: select a project first, then switch between that project's services.
 - Compact history panel shows recent per-service lifecycle/command events alongside the terminal.
 - Exposes API endpoints for AI tooling (`/api/capabilities`, `/api/state`, `/api/history`, `/api/logs`, `/api/snapshot`, process control).
-- `state`, `history`, and `logs` expose structured runtime metadata (`terminalMode`, `ptyAvailable`, `warnings`, `effectiveUrl`, `port`).
+- `state`, `history`, and `logs` expose structured runtime metadata (`status`, `ready`, `terminalMode`, `ptyAvailable`, `warnings`, `effectiveUrl`, `port`).
 
 ## Quick start
 
@@ -84,6 +84,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 
 - Running services now expose a `runId` in `GET /api/state` and `/api/snapshot`.
 - Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
+- Runtime snapshots expose `status` (`starting|ready|stopped|error`) and `ready` to avoid log-scraping for readiness.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
 - `WS /ws` accepts optional `runId` query param to ensure terminal attach targets the expected run.
 
@@ -91,6 +92,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 
 - `GET /api/history` returns per-service event history with retention of the latest `100` events.
 - Event types are: `start`, `stop_requested`, `restart_requested`, `stdin_command`, `exit`.
+- `exit` events may include `data.replacedByRestart: true` when the old run is intentionally replaced during restart.
 - Use this for workflow timeline and command context.
 - Keep `GET /api/logs` for verbose service output (stdout/stderr tail).
 

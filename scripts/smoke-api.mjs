@@ -204,11 +204,20 @@ async function main() {
       typeof started.process?.ptyAvailable === "boolean",
       "Expected ptyAvailable boolean in start response",
     );
+    assert(
+      started.process?.status === "starting" || started.process?.status === "ready",
+      "Expected status in start response",
+    );
+    assert(
+      typeof started.process?.ready === "boolean",
+      "Expected ready boolean in start response",
+    );
 
     const { project, service } = await waitForProjectService(
       baseUrl,
       tempProjectRoot,
-      (_project, candidateService) => candidateService.running === true,
+      (_project, candidateService) =>
+        candidateService.running === true && candidateService.ready === true,
     );
 
     assert(
@@ -220,6 +229,8 @@ async function main() {
       "Expected /api/state runId to match /api/process/start",
     );
     assert(Array.isArray(service.warnings), "Expected warnings array in /api/state");
+    assert(service.status === "ready", "Expected ready status in /api/state");
+    assert(service.ready === true, "Expected ready=true in /api/state");
     assert(
       service.terminalMode === "pty" || service.terminalMode === "pipe",
       "Expected terminalMode in /api/state",
@@ -251,7 +262,8 @@ async function main() {
     await waitForProjectService(
       baseUrl,
       tempProjectRoot,
-      (_project, candidateService) => candidateService.running === false,
+      (_project, candidateService) =>
+        candidateService.running === false && candidateService.status === "stopped",
     );
 
     const state = await requestJson(`${baseUrl}/api/state`);

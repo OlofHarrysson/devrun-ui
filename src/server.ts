@@ -295,6 +295,8 @@ function buildProcessPayload(
     serviceName: service.name,
     usedDefaultService,
     running: runInfo.running,
+    status: runInfo.status,
+    ready: runInfo.ready,
     runId: runInfo.runId || runInfo.lastRunId || null,
     startedAt: runInfo.startedAt || null,
     terminalMode: runInfo.terminalMode || null,
@@ -303,6 +305,10 @@ function buildProcessPayload(
     effectiveUrl: runInfo.effectiveUrl || null,
     port: typeof runInfo.port === "number" ? runInfo.port : null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
+    lastExitCode:
+      typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
+    exitWasRestartReplace: Boolean(runInfo.exitWasRestartReplace),
+    exitWasStopRequest: Boolean(runInfo.exitWasStopRequest),
     cmd: service.cmd,
     cwd: service.cwd || ".",
   };
@@ -325,6 +331,8 @@ function buildProjectState(project: RegistryEntry): ProjectState {
           cmd: service.cmd,
           cwd: service.cwd,
           running: runInfo.running,
+          status: runInfo.status,
+          ready: runInfo.ready,
           runId: runInfo.runId,
           lastRunId: runInfo.lastRunId,
           startedAt: runInfo.startedAt,
@@ -333,6 +341,9 @@ function buildProjectState(project: RegistryEntry): ProjectState {
           warnings: runInfo.warnings,
           effectiveUrl: runInfo.effectiveUrl,
           port: runInfo.port,
+          lastExitCode: runInfo.lastExitCode,
+          exitWasRestartReplace: runInfo.exitWasRestartReplace,
+          exitWasStopRequest: runInfo.exitWasStopRequest,
         };
       }),
     };
@@ -409,7 +420,8 @@ app.get("/api/capabilities", (_req, res) => {
       state: {
         method: "GET",
         path: "/api/state",
-        description: "List projects, services, and currently running processes.",
+        description:
+          "List projects, services, and currently running processes, including status/ready/runtime metadata.",
       },
       history: {
         method: "GET",
@@ -470,6 +482,7 @@ app.get("/api/capabilities", (_req, res) => {
       "Start quickly with POST /api/process/start using projectPath or cwd.",
       "Call GET /api/history?projectId=...&serviceName=... (capture nextAfterSeq).",
       "Poll with afterSeq=<nextAfterSeq> for incremental events.",
+      "Use status/ready fields to detect starting vs ready vs error without log scraping.",
       "Use GET /api/logs with runId for verbose output when needed.",
     ],
   });
@@ -713,6 +726,8 @@ app.get("/api/logs", (req, res) => {
     serviceName: resolvedService.service.name,
     usedDefaultService: resolvedService.usedDefaultService,
     chars,
+    status: runInfo.status,
+    ready: runInfo.ready,
     runId: runInfo.runId || runInfo.lastRunId || null,
     running: runInfo.running,
     terminalMode: runInfo.terminalMode || null,
@@ -721,6 +736,10 @@ app.get("/api/logs", (req, res) => {
     effectiveUrl: runInfo.effectiveUrl || null,
     port: typeof runInfo.port === "number" ? runInfo.port : null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
+    lastExitCode:
+      typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
+    exitWasRestartReplace: Boolean(runInfo.exitWasRestartReplace),
+    exitWasStopRequest: Boolean(runInfo.exitWasStopRequest),
     output: processes.getLogTail(
       projectResult.project.id,
       resolvedService.service.name,
@@ -785,6 +804,8 @@ app.get("/api/history", (req, res) => {
     serviceName,
     usedDefaultService: resolvedService.usedDefaultService,
     running: runInfo.running,
+    status: runInfo.status,
+    ready: runInfo.ready,
     runId: runInfo.runId || runInfo.lastRunId || null,
     startedAt: runInfo.startedAt || null,
     terminalMode: runInfo.terminalMode || null,
@@ -793,6 +814,10 @@ app.get("/api/history", (req, res) => {
     effectiveUrl: runInfo.effectiveUrl || null,
     port: typeof runInfo.port === "number" ? runInfo.port : null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
+    lastExitCode:
+      typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
+    exitWasRestartReplace: Boolean(runInfo.exitWasRestartReplace),
+    exitWasStopRequest: Boolean(runInfo.exitWasStopRequest),
     retention: processes.historyRetention(),
     afterSeq,
     limit,

@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { spawn as spawnChild } from "child_process";
 import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
-import type { ProjectService, RegistryEntry } from "./types";
+import type { ProjectService, RegistryEntry, ServiceStatus } from "./types";
 import { ServiceHistoryStore } from "./historyStore";
 
 type ProcessRunner = {
@@ -22,6 +22,24 @@ type RuntimeMetadata = {
   warnings: string[];
   effectiveUrl?: string;
   port?: number;
+  readyHintSeen: boolean;
+};
+
+type RunInfo = {
+  runId?: string;
+  lastRunId?: string;
+  running: boolean;
+  status: ServiceStatus;
+  ready: boolean;
+  startedAt?: string;
+  terminalMode?: "pty" | "pipe";
+  ptyAvailable?: boolean;
+  warnings: string[];
+  effectiveUrl?: string;
+  port?: number;
+  lastExitCode?: number;
+  exitWasRestartReplace: boolean;
+  exitWasStopRequest: boolean;
 };
 
 type Session = {
@@ -37,6 +55,7 @@ type Session = {
   runtime: RuntimeMetadata;
   warningKeys: Set<string>;
   detectedUrls: string[];
+  stopRequested: boolean;
 };
 
 type RecentLog = {
@@ -46,11 +65,14 @@ type RecentLog = {
   exitedAt: string;
   startedAt: string;
   runtime: RuntimeMetadata;
+  exitWasRestartReplace: boolean;
+  exitWasStopRequest: boolean;
 };
 
 const MAX_LOG_CHARS = 120_000;
 const MAX_RECENT_LOGS = 100;
 const HISTORY_RETENTION = 100;
+const READY_GRACE_MS = 2500;
 
 function makeKey(projectId: string, serviceName: string) {
   return `${projectId}::${serviceName}`;
@@ -132,6 +154,12 @@ function parseWarningLines(chunk: string) {
     }
   }
   return warnings;
+}
+
+function hasReadySignal(chunk: string) {
+  return /(local:\s*https?:\/\/|listening on|ready in|compiled successfully|server started|started server|ready on)/i.test(
+    chunk,
+  );
 }
 
 function buildChildEnv() {
@@ -244,6 +272,7 @@ function createPipeRunner(
 export class ProcessManager {
   private sessions = new Map<string, Session>();
   private recentLogs = new Map<string, RecentLog>();
+  private replacedRunIds = new Set<string>();
   private history = new ServiceHistoryStore({ retention: HISTORY_RETENTION });
 
   isRunning(projectId: string, serviceName: string) {
@@ -251,17 +280,22 @@ export class ProcessManager {
   }
 
   listRunning() {
-    return Array.from(this.sessions.values()).map((session) => ({
-      projectId: session.projectId,
-      serviceName: session.serviceName,
-      startedAt: session.startedAt,
-      runId: session.runId,
-      terminalMode: session.runtime.terminalMode,
-      ptyAvailable: session.runtime.ptyAvailable,
-      warnings: [...session.runtime.warnings],
-      effectiveUrl: session.runtime.effectiveUrl,
-      port: session.runtime.port,
-    }));
+    return Array.from(this.sessions.values()).map((session) => {
+      const status = this.getSessionStatus(session);
+      return {
+        projectId: session.projectId,
+        serviceName: session.serviceName,
+        startedAt: session.startedAt,
+        runId: session.runId,
+        status,
+        ready: status === "ready",
+        terminalMode: session.runtime.terminalMode,
+        ptyAvailable: session.runtime.ptyAvailable,
+        warnings: [...session.runtime.warnings],
+        effectiveUrl: session.runtime.effectiveUrl,
+        port: session.runtime.port,
+      };
+    });
   }
 
   historyRetention() {
@@ -303,6 +337,35 @@ export class ProcessManager {
     }
   }
 
+  private isSessionReady(session: Session) {
+    if (session.runtime.readyHintSeen || session.runtime.effectiveUrl) {
+      return true;
+    }
+    const startedMs = Date.parse(session.startedAt);
+    if (!Number.isFinite(startedMs)) {
+      return false;
+    }
+    return Date.now() - startedMs >= READY_GRACE_MS;
+  }
+
+  private getSessionStatus(session: Session): ServiceStatus {
+    return this.isSessionReady(session) ? "ready" : "starting";
+  }
+
+  private getRecentStatus(recent?: RecentLog): ServiceStatus {
+    if (!recent) {
+      return "stopped";
+    }
+    if (
+      recent.exitCode !== 0 &&
+      !recent.exitWasRestartReplace &&
+      !recent.exitWasStopRequest
+    ) {
+      return "error";
+    }
+    return "stopped";
+  }
+
   private updateRuntimeMetadata(session: Session, chunk: string) {
     const urls = parseUrls(chunk);
     for (const url of urls) {
@@ -326,6 +389,10 @@ export class ProcessManager {
       }
     } else {
       session.runtime.port = undefined;
+    }
+
+    if (!session.runtime.readyHintSeen && (Boolean(effectiveUrl) || hasReadySignal(chunk))) {
+      session.runtime.readyHintSeen = true;
     }
 
     const warningLines = parseWarningLines(chunk);
@@ -418,9 +485,11 @@ export class ProcessManager {
         terminalMode: runner.mode,
         ptyAvailable: runner.mode === "pty",
         warnings: ptyWarning ? [ptyWarning] : [],
+        readyHintSeen: false,
       },
       warningKeys: new Set<string>(ptyWarning ? [ptyWarning.toLowerCase()] : []),
       detectedUrls: [],
+      stopRequested: false,
     };
 
     this.recordHistory(project.id, service.name, "start", {
@@ -445,12 +514,18 @@ export class ProcessManager {
     });
 
     runner.onExit((exitCode) => {
+      const replacedByRestart = this.replacedRunIds.delete(session.runId);
+      const stopRequested = session.stopRequested;
       const needsNewline = session.logBuffer && !session.logBuffer.endsWith("\n");
       const msg = `${needsNewline ? "\n" : ""}${marker(`[process exited ${exitCode}]`)}`;
       this.appendLog(session, msg);
       this.recordHistory(session.projectId, session.serviceName, "exit", {
         runId: session.runId,
-        data: { exitCode },
+        data: {
+          exitCode,
+          ...(stopRequested ? { stopRequested: true } : {}),
+          ...(replacedByRestart ? { replacedByRestart: true } : {}),
+        },
       });
 
       for (const client of session.clients) {
@@ -482,7 +557,10 @@ export class ProcessManager {
           warnings: [...session.runtime.warnings],
           effectiveUrl: session.runtime.effectiveUrl,
           port: session.runtime.port,
+          readyHintSeen: session.runtime.readyHintSeen,
         },
+        exitWasRestartReplace: replacedByRestart,
+        exitWasStopRequest: stopRequested,
       });
 
       // Keep memory bounded.
@@ -508,6 +586,7 @@ export class ProcessManager {
     this.recordHistory(projectId, serviceName, "stop_requested", {
       runId: session.runId,
     });
+    session.stopRequested = true;
 
     try {
       session.runner.interrupt();
@@ -539,6 +618,7 @@ export class ProcessManager {
     });
 
     if (existing) {
+      this.replacedRunIds.add(existing.runId);
       try {
         existing.runner.kill();
       } catch {
@@ -592,11 +672,14 @@ export class ProcessManager {
     }
 
     session.clients.add(ws);
+    const ready = this.isSessionReady(session);
     ws.send(
       JSON.stringify({
         type: "meta",
         runId: session.runId,
         startedAt: session.startedAt,
+        status: ready ? "ready" : "starting",
+        ready,
         mode: session.runtime.terminalMode,
         ptyAvailable: session.runtime.ptyAvailable,
         warnings: session.runtime.warnings,
@@ -620,34 +703,46 @@ export class ProcessManager {
     session.clients.delete(ws);
   }
 
-  getRunInfo(projectId: string, serviceName: string) {
+  getRunInfo(projectId: string, serviceName: string): RunInfo {
     const key = makeKey(projectId, serviceName);
     const session = this.sessions.get(key);
     if (session) {
+      const ready = this.isSessionReady(session);
       return {
         runId: session.runId,
         lastRunId: session.runId,
         running: true,
+        status: ready ? "ready" : "starting",
+        ready,
         startedAt: session.startedAt,
         terminalMode: session.runtime.terminalMode,
         ptyAvailable: session.runtime.ptyAvailable,
         warnings: [...session.runtime.warnings],
         effectiveUrl: session.runtime.effectiveUrl,
         port: session.runtime.port,
+        lastExitCode: undefined,
+        exitWasRestartReplace: false,
+        exitWasStopRequest: false,
       };
     }
 
     const recent = this.recentLogs.get(key);
+    const status = this.getRecentStatus(recent);
     return {
       runId: undefined,
       lastRunId: recent?.runId,
       running: false,
+      status,
+      ready: false,
       startedAt: recent?.startedAt,
       terminalMode: recent?.runtime.terminalMode,
       ptyAvailable: recent?.runtime.ptyAvailable,
       warnings: recent ? [...recent.runtime.warnings] : [],
       effectiveUrl: recent?.runtime.effectiveUrl,
       port: recent?.runtime.port,
+      lastExitCode: recent?.exitCode,
+      exitWasRestartReplace: Boolean(recent?.exitWasRestartReplace),
+      exitWasStopRequest: Boolean(recent?.exitWasStopRequest),
     };
   }
 

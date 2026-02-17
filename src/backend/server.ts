@@ -483,6 +483,7 @@ app.get("/api/capabilities", (_req, res) => {
         { method: "POST", path: "/api/process/stop" },
         { method: "POST", path: "/api/process/restart" },
         { method: "POST", path: "/api/process/stdin" },
+        { method: "POST", path: "/api/process/cleanup-orphans" },
       ],
       ws: {
         method: "WS",
@@ -501,6 +502,7 @@ app.get("/api/capabilities", (_req, res) => {
       "Call GET /api/history?projectPath=... (capture nextAfterSeq; omit serviceName to use defaultService).",
       "Poll GET /api/history?projectPath=...&afterSeq=<nextAfterSeq> for incremental events.",
       "Use status/ready fields to detect starting vs ready vs error without log scraping.",
+      "Call POST /api/process/cleanup-orphans if runtime state looks desynced after crashes/restarts.",
       "Configured service ports are strict; start/restart returns HTTP 409 when the port is in use.",
       "Use GET /api/logs with runId for verbose output when needed.",
     ],
@@ -717,6 +719,20 @@ app.post("/api/process/stdin", (req, res) => {
       usedDefaultService,
     ),
   });
+});
+
+app.post("/api/process/cleanup-orphans", async (_req, res) => {
+  try {
+    const report = await processes.cleanupOwnedOrphans();
+    return res.json({
+      ok: true,
+      report,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to cleanup orphan processes",
+    });
+  }
 });
 
 app.get("/api/logs", (req, res) => {
@@ -940,6 +956,15 @@ app.all("*", (req, res) => {
 
 async function start() {
   await nextApp.prepare();
+  const cleanup = await processes.cleanupOwnedOrphans();
+  if (cleanup.inspected > 0 || cleanup.errors.length > 0) {
+    console.log(
+      `[devrun-ui] orphan cleanup inspected=${cleanup.inspected} terminated=${cleanup.terminated} missing=${cleanup.missing} retained=${cleanup.retained}`,
+    );
+    if (cleanup.errors.length > 0) {
+      console.warn(`[devrun-ui] orphan cleanup errors: ${cleanup.errors.join("; ")}`);
+    }
+  }
 
   server.listen(PORT, () => {
     console.log(`[devrun-ui] listening on http://localhost:${PORT}`);

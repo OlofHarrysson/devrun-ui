@@ -363,6 +363,15 @@ async function main() {
       });
     }
 
+    const cleanup = await requestJson(`${baseUrl}/api/process/cleanup-orphans`, {
+      method: "POST",
+    });
+    assert(cleanup.ok === true, "Expected cleanup-orphans endpoint to return ok=true");
+    assert(
+      cleanup.report && typeof cleanup.report.inspected === "number",
+      "Expected cleanup-orphans report payload",
+    );
+
     const state = await requestJson(`${baseUrl}/api/state`);
     const createdProject = Array.isArray(state.projects)
       ? state.projects.find((entry) => entry.root === tempProjectRoot)

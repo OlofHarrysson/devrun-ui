@@ -17,6 +17,7 @@ type ProcessRunner = {
   onData: (listener: (data: string) => void) => void;
   onExit: (listener: (exitCode: number) => void) => void;
   mode: "pty" | "pipe";
+  pid?: number;
 };
 
 type RuntimeMetadata = {
@@ -72,16 +73,41 @@ type RecentLog = {
   exitWasStopRequest: boolean;
 };
 
+type OwnedRunRecord = {
+  runId: string;
+  projectId: string;
+  serviceName: string;
+  projectRoot: string;
+  cmd: string;
+  cwd: string;
+  startedAt: string;
+  pid: number;
+  mode: "pty" | "pipe";
+};
+
+export type OrphanCleanupReport = {
+  inspected: number;
+  terminated: number;
+  missing: number;
+  skippedActive: number;
+  retained: number;
+  errors: string[];
+};
+
 const MAX_LOG_CHARS = 120_000;
 const MAX_RECENT_LOGS = 100;
 const HISTORY_RETENTION = 100;
 const READY_GRACE_MS = 2500;
 const LOCAL_STORAGE_RUNTIME_DIR = path.join(DEVRUN_HOME, "runtime", "localstorage");
+const OWNED_RUNS_PATH = path.join(DEVRUN_HOME, "runtime", "owned-runs.json");
 const RESTART_PORT_RELEASE_TIMEOUT_MS = 4000;
 const PORT_RELEASE_POLL_MS = 120;
 const STOP_KILL_TIMEOUT_MS = 1200;
 const STOP_ALL_WAIT_TIMEOUT_MS = 6000;
 const STOP_ALL_POLL_MS = 50;
+const ORPHAN_TERM_TIMEOUT_MS = 1600;
+const ORPHAN_KILL_TIMEOUT_MS = 1200;
+const PROCESS_EXIT_POLL_MS = 120;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
@@ -277,26 +303,129 @@ async function waitForPortRelease(port: number, timeoutMs = RESTART_PORT_RELEASE
   throw new PortUnavailableError(port);
 }
 
-function signalProcessTree(
-  child: ReturnType<typeof spawnChild>,
-  signal: NodeJS.Signals,
-) {
-  // In pipe mode, we need to terminate the whole process tree (e.g. tsx watch + node child).
-  // On Unix we create a detached process group and signal the group by negative pid.
-  if (process.platform !== "win32" && typeof child.pid === "number" && child.pid > 0) {
+function signalPidOrGroup(pid: number | undefined, signal: NodeJS.Signals): boolean {
+  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  if (process.platform !== "win32") {
     try {
-      process.kill(-child.pid, signal);
-      return;
+      process.kill(-pid, signal);
+      return true;
     } catch {
-      // fallback to direct child signal
+      // fallback to direct pid signal
     }
   }
 
   try {
-    child.kill(signal);
+    process.kill(pid, signal);
+    return true;
   } catch {
-    // no-op
+    return false;
   }
+}
+
+function processExists(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code || "")
+        : "";
+    if (code === "ESRCH") {
+      return false;
+    }
+    // Treat permission errors as "process exists but inaccessible".
+    return true;
+  }
+}
+
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processExists(pid)) {
+      return true;
+    }
+    await sleep(PROCESS_EXIT_POLL_MS);
+  }
+  return !processExists(pid);
+}
+
+async function terminateProcessGroup(pid: number): Promise<boolean> {
+  if (!processExists(pid)) {
+    return true;
+  }
+
+  signalPidOrGroup(pid, "SIGTERM");
+  if (await waitForProcessExit(pid, ORPHAN_TERM_TIMEOUT_MS)) {
+    return true;
+  }
+
+  signalPidOrGroup(pid, "SIGKILL");
+  return waitForProcessExit(pid, ORPHAN_KILL_TIMEOUT_MS);
+}
+
+function readOwnedRunsFile(): OwnedRunRecord[] {
+  if (!fs.existsSync(OWNED_RUNS_PATH)) {
+    return [];
+  }
+
+  try {
+    const raw = fs.readFileSync(OWNED_RUNS_PATH, "utf8");
+    if (!raw.trim()) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as { runs?: unknown };
+    const runs = Array.isArray(parsed.runs) ? parsed.runs : [];
+
+    return runs
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+        const candidate = entry as Partial<OwnedRunRecord>;
+        if (
+          typeof candidate.runId !== "string" ||
+          typeof candidate.projectId !== "string" ||
+          typeof candidate.serviceName !== "string" ||
+          typeof candidate.projectRoot !== "string" ||
+          typeof candidate.cmd !== "string" ||
+          typeof candidate.cwd !== "string" ||
+          typeof candidate.startedAt !== "string" ||
+          typeof candidate.pid !== "number" ||
+          !Number.isInteger(candidate.pid) ||
+          candidate.pid <= 0 ||
+          (candidate.mode !== "pty" && candidate.mode !== "pipe")
+        ) {
+          return null;
+        }
+        return candidate as OwnedRunRecord;
+      })
+      .filter((entry): entry is OwnedRunRecord => Boolean(entry));
+  } catch {
+    return [];
+  }
+}
+
+function writeOwnedRunsFile(runs: OwnedRunRecord[]) {
+  fs.mkdirSync(path.dirname(OWNED_RUNS_PATH), { recursive: true });
+  fs.writeFileSync(
+    OWNED_RUNS_PATH,
+    JSON.stringify(
+      {
+        updatedAt: new Date().toISOString(),
+        runs,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 function createPtyRunner(
@@ -323,10 +452,14 @@ function createPtyRunner(
       pty.resize(Math.max(20, cols), Math.max(8, rows));
     },
     interrupt() {
-      pty.write("\u0003");
+      if (!signalPidOrGroup(pty.pid, "SIGINT")) {
+        pty.write("\u0003");
+      }
     },
     kill() {
-      pty.kill();
+      if (!signalPidOrGroup(pty.pid, "SIGKILL")) {
+        pty.kill();
+      }
     },
     onData(listener) {
       pty.onData(listener);
@@ -335,6 +468,7 @@ function createPtyRunner(
       pty.onExit(({ exitCode }) => listener(exitCode));
     },
     mode: "pty",
+    pid: pty.pid,
   };
 }
 
@@ -361,10 +495,22 @@ function createPipeRunner(
       // Not supported in pipe mode.
     },
     interrupt() {
-      signalProcessTree(child, "SIGINT");
+      if (!signalPidOrGroup(child.pid, "SIGINT")) {
+        try {
+          child.kill("SIGINT");
+        } catch {
+          // no-op
+        }
+      }
     },
     kill() {
-      signalProcessTree(child, "SIGKILL");
+      if (!signalPidOrGroup(child.pid, "SIGKILL")) {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // no-op
+        }
+      }
     },
     onData(listener) {
       child.stdout?.on("data", (chunk: Buffer | string) => {
@@ -380,6 +526,7 @@ function createPipeRunner(
       });
     },
     mode: "pipe",
+    pid: typeof child.pid === "number" ? child.pid : undefined,
   };
 }
 
@@ -422,6 +569,75 @@ export class ProcessManager {
 
   clearHistoryForProject(projectId: string) {
     this.history.clearProject(projectId);
+  }
+
+  private saveOwnedRun(entry: OwnedRunRecord) {
+    const current = readOwnedRunsFile();
+    const filtered = current.filter(
+      (candidate) =>
+        !(
+          candidate.projectId === entry.projectId &&
+          candidate.serviceName === entry.serviceName
+        ),
+    );
+    filtered.push(entry);
+    writeOwnedRunsFile(filtered);
+  }
+
+  private removeOwnedRun(runId: string) {
+    if (!runId) {
+      return;
+    }
+    const current = readOwnedRunsFile();
+    const filtered = current.filter((candidate) => candidate.runId !== runId);
+    if (filtered.length === current.length) {
+      return;
+    }
+    writeOwnedRunsFile(filtered);
+  }
+
+  async cleanupOwnedOrphans(): Promise<OrphanCleanupReport> {
+    const runs = readOwnedRunsFile();
+    const activeRunIds = new Set<string>(
+      Array.from(this.sessions.values()).map((session) => session.runId),
+    );
+    const keep: OwnedRunRecord[] = [];
+    const report: OrphanCleanupReport = {
+      inspected: 0,
+      terminated: 0,
+      missing: 0,
+      skippedActive: 0,
+      retained: 0,
+      errors: [],
+    };
+
+    for (const run of runs) {
+      if (activeRunIds.has(run.runId)) {
+        report.skippedActive += 1;
+        keep.push(run);
+        continue;
+      }
+
+      report.inspected += 1;
+      if (!processExists(run.pid)) {
+        report.missing += 1;
+        continue;
+      }
+
+      const killed = await terminateProcessGroup(run.pid);
+      if (killed) {
+        report.terminated += 1;
+      } else {
+        report.errors.push(
+          `${run.projectId}/${run.serviceName} pid ${run.pid} could not be terminated`,
+        );
+        keep.push(run);
+      }
+    }
+
+    report.retained = keep.length;
+    writeOwnedRunsFile(keep);
+    return report;
   }
 
   private recordHistory(
@@ -610,6 +826,20 @@ export class ProcessManager {
       stopRequested: false,
     };
 
+    if (typeof runner.pid === "number" && Number.isInteger(runner.pid) && runner.pid > 0) {
+      this.saveOwnedRun({
+        runId,
+        projectId: project.id,
+        serviceName: service.name,
+        projectRoot: project.root,
+        cmd: service.cmd,
+        cwd,
+        startedAt,
+        pid: runner.pid,
+        mode: runner.mode,
+      });
+    }
+
     this.recordHistory(project.id, service.name, "start", {
       runId,
       data: {
@@ -633,6 +863,7 @@ export class ProcessManager {
     });
 
     runner.onExit((exitCode) => {
+      this.removeOwnedRun(session.runId);
       const replacedByRestart = this.replacedRunIds.delete(session.runId);
       const stopRequested = session.stopRequested;
       const needsNewline = session.logBuffer && !session.logBuffer.endsWith("\n");

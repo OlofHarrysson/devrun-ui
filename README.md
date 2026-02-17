@@ -62,6 +62,8 @@ npm run dev
 - Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
 - If a service has configured `port`, Devrun injects `PORT=<port>` before launch.
 - Configured ports are strict: if the port is already taken, start/restart returns `409` instead of silently rolling to another port.
+- Devrun persists owned child runs and performs an orphan cleanup sweep on startup.
+- You can trigger manual cleanup via `POST /api/process/cleanup-orphans` if runtime state becomes desynced.
 - Devrun injects `NODE_OPTIONS=--localstorage-file=<...>` when missing, with files stored under `.devrun/runtime/localstorage/` so transient localStorage artifacts stay out of managed project repos.
 
 Service `cwd` and `port` are optional:
@@ -94,6 +96,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/process/stop`
 - `POST /api/process/restart`
 - `POST /api/process/stdin`
+- `POST /api/process/cleanup-orphans`
 - `GET /api/history?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&afterSeq=0&limit=25`
 - `GET /api/logs?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&chars=4000`
 - `POST /api/snapshot`

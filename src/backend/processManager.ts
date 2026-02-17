@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import net from "net";
 import { spawn as spawnChild } from "child_process";
 import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
@@ -76,6 +77,14 @@ const MAX_RECENT_LOGS = 100;
 const HISTORY_RETENTION = 100;
 const READY_GRACE_MS = 2500;
 const LOCAL_STORAGE_RUNTIME_DIR = path.join(DEVRUN_HOME, "runtime", "localstorage");
+const RESTART_PORT_RELEASE_TIMEOUT_MS = 4000;
+const PORT_RELEASE_POLL_MS = 120;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 function makeKey(projectId: string, serviceName: string) {
   return `${projectId}::${serviceName}`;
@@ -190,12 +199,79 @@ function ensureNodeLocalStorageFile(
   env.NODE_OPTIONS = existing.trim() ? `${existing.trim()} ${option}` : option;
 }
 
-function buildChildEnv(projectId: string, serviceName: string) {
+function buildChildEnv(projectId: string, serviceName: string, configuredPort?: number) {
   const env: NodeJS.ProcessEnv = { ...process.env };
   // Avoid inheriting server port into child apps (can collide with Devrun itself).
   delete env.PORT;
+  if (typeof configuredPort === "number") {
+    env.PORT = String(configuredPort);
+  }
   ensureNodeLocalStorageFile(env, projectId, serviceName);
   return env;
+}
+
+export class PortUnavailableError extends Error {
+  port: number;
+
+  constructor(port: number) {
+    super(`Configured port ${port} is already in use.`);
+    this.name = "PortUnavailableError";
+    this.port = port;
+  }
+}
+
+async function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.unref();
+
+    probe.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE" || error.code === "EACCES") {
+        resolve(false);
+        return;
+      }
+      reject(error);
+    });
+
+    probe.listen({ host: "127.0.0.1", port }, () => {
+      probe.close((closeError) => {
+        if (closeError) {
+          reject(closeError);
+          return;
+        }
+        resolve(true);
+      });
+    });
+  });
+}
+
+async function ensurePortIsAvailable(port: number) {
+  let available = false;
+  try {
+    available = await isPortAvailable(port);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to validate configured port ${port}: ${message}`);
+  }
+
+  if (!available) {
+    throw new PortUnavailableError(port);
+  }
+}
+
+async function waitForPortRelease(port: number, timeoutMs = RESTART_PORT_RELEASE_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if (await isPortAvailable(port)) {
+        return;
+      }
+    } catch {
+      // Keep retrying for transient probe errors.
+    }
+    await sleep(PORT_RELEASE_POLL_MS);
+  }
+  throw new PortUnavailableError(port);
 }
 
 function signalProcessTree(
@@ -226,13 +302,14 @@ function createPtyRunner(
   cwd: string,
   projectId: string,
   serviceName: string,
+  configuredPort?: number,
 ): ProcessRunner {
   const pty = spawnPty(shell, ["-lc", command], {
     name: "xterm-color",
     cols: 120,
     rows: 32,
     cwd,
-    env: buildChildEnv(projectId, serviceName),
+    env: buildChildEnv(projectId, serviceName, configuredPort),
   });
 
   return {
@@ -264,10 +341,11 @@ function createPipeRunner(
   cwd: string,
   projectId: string,
   serviceName: string,
+  configuredPort?: number,
 ): ProcessRunner {
   const child = spawnChild(shell, ["-lc", command], {
     cwd,
-    env: buildChildEnv(projectId, serviceName),
+    env: buildChildEnv(projectId, serviceName, configuredPort),
     stdio: "pipe",
     detached: process.platform !== "win32",
   });
@@ -476,13 +554,17 @@ export class ProcessManager {
     }
   }
 
-  start(project: RegistryEntry, service: ProjectService): Session {
+  async start(project: RegistryEntry, service: ProjectService): Promise<Session> {
     const key = makeKey(project.id, service.name);
     const existing = this.sessions.get(key);
     if (existing) {
       return existing;
     }
     this.recentLogs.delete(key);
+
+    if (typeof service.port === "number") {
+      await ensurePortIsAvailable(service.port);
+    }
 
     const shell = process.env.SHELL || "/bin/zsh";
     const cwd = service.cwd
@@ -493,9 +575,9 @@ export class ProcessManager {
     let modeNotice = "";
     let ptyWarning = "";
     try {
-      runner = createPtyRunner(shell, service.cmd, cwd, project.id, service.name);
+      runner = createPtyRunner(shell, service.cmd, cwd, project.id, service.name, service.port);
     } catch (error) {
-      runner = createPipeRunner(shell, service.cmd, cwd, project.id, service.name);
+      runner = createPipeRunner(shell, service.cmd, cwd, project.id, service.name, service.port);
       const reason =
         error instanceof Error ? error.message : "Failed to initialize PTY";
       ptyWarning = `PTY unavailable, using pipe mode: ${reason}`;
@@ -530,6 +612,7 @@ export class ProcessManager {
       data: {
         cmd: service.cmd,
         cwd: service.cwd || ".",
+        ...(typeof service.port === "number" ? { port: service.port } : {}),
         mode: runner.mode,
         ptyAvailable: runner.mode === "pty",
       },
@@ -643,7 +726,7 @@ export class ProcessManager {
     return true;
   }
 
-  restart(project: RegistryEntry, service: ProjectService) {
+  async restart(project: RegistryEntry, service: ProjectService) {
     const key = makeKey(project.id, service.name);
     const existing = this.sessions.get(key);
     this.recordHistory(project.id, service.name, "restart_requested", {
@@ -659,6 +742,10 @@ export class ProcessManager {
       }
       // Remove the previous session immediately; exit handler is guarded to avoid clobbering.
       this.sessions.delete(key);
+
+      if (typeof service.port === "number") {
+        await waitForPortRelease(service.port);
+      }
     }
 
     return this.start(project, service);

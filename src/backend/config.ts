@@ -41,15 +41,63 @@ function writeConfigFile(file: ConfigFile) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(file, null, 2));
 }
 
+function parseServicePort(input: unknown): number | undefined {
+  if (input === undefined || input === null || input === "") {
+    return undefined;
+  }
+
+  const value =
+    typeof input === "number"
+      ? input
+      : typeof input === "string"
+        ? Number(input.trim())
+        : Number.NaN;
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new Error("Service port must be an integer between 1 and 65535");
+  }
+
+  return value;
+}
+
+function inferPortFromCommand(command: string): number | undefined {
+  const match = command.match(/^\s*PORT=(\d+)\s+/);
+  if (!match) {
+    return undefined;
+  }
+
+  const parsed = Number(match[1]);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
 function sanitizeConfig(config: Partial<ProjectConfig>): ProjectConfig {
   const servicesInput = Array.isArray(config.services) ? config.services : [];
   const services = servicesInput
     .filter((service) => Boolean(service?.name && service?.cmd))
-    .map((service) => ({
-      name: service.name.trim(),
-      cmd: service.cmd.trim(),
-      cwd: service.cwd?.trim() || undefined,
-    }));
+    .map((service) => {
+      const name = service.name.trim();
+      const cmd = service.cmd.trim();
+      const explicitPort = parseServicePort(service.port);
+      const inferredPort = inferPortFromCommand(cmd);
+      if (
+        typeof explicitPort === "number" &&
+        typeof inferredPort === "number" &&
+        explicitPort !== inferredPort
+      ) {
+        throw new Error(
+          `Service '${name}' has port=${explicitPort} but command sets PORT=${inferredPort}. Use one port source.`,
+        );
+      }
+      return {
+        name,
+        cmd,
+        cwd: service.cwd?.trim() || undefined,
+        port: explicitPort ?? inferredPort,
+      };
+    });
 
   if (!services.length) {
     throw new Error("Project config must include at least one valid service");

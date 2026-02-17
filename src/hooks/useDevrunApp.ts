@@ -797,9 +797,34 @@ export function useDevrunApp(): DevrunAppModel {
       );
       const cwd = (cwdInput || "").trim();
 
+      const portInput = window.prompt(
+        `Port for '${serviceName}' (optional, 1-65535):`,
+        typeof existing.port === "number" ? String(existing.port) : "",
+      );
+      if (portInput === null) {
+        if (!services.length) {
+          return;
+        }
+        continue;
+      }
+
+      const rawPort = portInput.trim();
+      let configuredPort: number | undefined;
+      if (rawPort) {
+        const parsedPort = Number(rawPort);
+        if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+          window.alert("Port must be an integer between 1 and 65535.");
+          continue;
+        }
+        configuredPort = parsedPort;
+      }
+
       const nextService: ProjectServiceConfigInput = { name: serviceName, cmd };
       if (cwd) {
         nextService.cwd = cwd;
+      }
+      if (typeof configuredPort === "number") {
+        nextService.port = configuredPort;
       }
       services.push(nextService);
 

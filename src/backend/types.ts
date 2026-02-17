@@ -9,6 +9,7 @@ export type ProjectService = {
   name: string;
   cmd: string;
   cwd?: string;
+  port?: number;
 };
 
 export type ProjectConfig = {

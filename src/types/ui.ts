@@ -11,12 +11,14 @@ export interface ProjectServiceConfigInput {
   name: string;
   cmd: string;
   cwd?: string;
+  port?: number;
 }
 
 export interface ProjectServiceState {
   name: string;
   cmd: string;
   cwd?: string;
+  port?: number;
   running: boolean;
   status?: ServiceLifecycleStatus;
   ready?: boolean;

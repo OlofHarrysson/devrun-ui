@@ -9,6 +9,7 @@ Local GUI to run long-lived dev services per project, with real PTY terminals in
 ## What it does
 - Add multiple projects by path.
 - Store per-project service config (including `defaultService`) in Devrun (no per-repo YAML required).
+- Optional per-service `port` can be configured explicitly.
 - Start/stop/restart services from a top command bar.
 - Auto-open terminal tabs per service (live if running, read-only recent logs if stopped).
 - Service tabs are project-scoped: select a project first, then switch between that project's services.
@@ -59,15 +60,18 @@ npm run dev
   - otherwise `npm run start` if a `start` script exists
 - You can override via the **Configure** button in the UI.
 - Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
+- If a service has configured `port`, Devrun injects `PORT=<port>` before launch.
+- Configured ports are strict: if the port is already taken, start/restart returns `409` instead of silently rolling to another port.
 - Devrun injects `NODE_OPTIONS=--localstorage-file=<...>` when missing, with files stored under `.devrun/runtime/localstorage/` so transient localStorage artifacts stay out of managed project repos.
 
-Service `cwd` is optional (relative to project root):
+Service `cwd` and `port` are optional:
 
 ```yaml
 services:
   - name: worker
     cmd: npm run worker
     cwd: apps/worker
+    port: 4010
 ```
 
 ## Default seeded projects

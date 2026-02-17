@@ -11,7 +11,7 @@ import {
   removeProjectConfig,
   writeProjectConfig,
 } from "./config";
-import { ProcessManager } from "./processManager";
+import { PortUnavailableError, ProcessManager } from "./processManager";
 import type { ProjectConfig, ProjectService, ProjectState, RegistryEntry } from "./types";
 
 const PORT = Number(process.env.PORT || 4317);
@@ -35,7 +35,8 @@ const DEFAULT_PROJECTS = [
     root: "/Users/olof/git/codex-projects/devrun-ui",
     service: {
       name: "web",
-      cmd: "PORT=4327 npm run dev",
+      cmd: "npm run dev",
+      port: 4327,
     } satisfies ProjectService,
   },
   {
@@ -295,6 +296,12 @@ function buildProcessPayload(
   runInfo: ReturnType<ProcessManager["getRunInfo"]>,
   usedDefaultService: boolean,
 ) {
+  const resolvedPort =
+    typeof runInfo.port === "number"
+      ? runInfo.port
+      : typeof service.port === "number"
+        ? service.port
+        : null;
   return {
     projectId: project.id,
     projectPath: project.root,
@@ -309,7 +316,7 @@ function buildProcessPayload(
     ptyAvailable:
       typeof runInfo.ptyAvailable === "boolean" ? runInfo.ptyAvailable : null,
     effectiveUrl: runInfo.effectiveUrl || null,
-    port: typeof runInfo.port === "number" ? runInfo.port : null,
+    port: resolvedPort,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
     lastExitCode:
       typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
@@ -336,6 +343,12 @@ function buildProjectState(project: RegistryEntry): ProjectState {
           name: service.name,
           cmd: service.cmd,
           cwd: service.cwd,
+          port:
+            typeof runInfo.port === "number"
+              ? runInfo.port
+              : typeof service.port === "number"
+                ? service.port
+                : undefined,
           running: runInfo.running,
           status: runInfo.status,
           ready: runInfo.ready,
@@ -346,7 +359,6 @@ function buildProjectState(project: RegistryEntry): ProjectState {
           ptyAvailable: runInfo.ptyAvailable,
           warnings: runInfo.warnings,
           effectiveUrl: runInfo.effectiveUrl,
-          port: runInfo.port,
           lastExitCode: runInfo.lastExitCode,
           exitWasRestartReplace: runInfo.exitWasRestartReplace,
           exitWasStopRequest: runInfo.exitWasStopRequest,
@@ -489,6 +501,7 @@ app.get("/api/capabilities", (_req, res) => {
       "Call GET /api/history?projectPath=... (capture nextAfterSeq; omit serviceName to use defaultService).",
       "Poll GET /api/history?projectPath=...&afterSeq=<nextAfterSeq> for incremental events.",
       "Use status/ready fields to detect starting vs ready vs error without log scraping.",
+      "Configured service ports are strict; start/restart returns HTTP 409 when the port is in use.",
       "Use GET /api/logs with runId for verbose output when needed.",
     ],
   });
@@ -568,7 +581,7 @@ app.delete("/api/projects/:projectId", (req, res) => {
   return res.status(204).send();
 });
 
-app.post("/api/process/start", (req, res) => {
+app.post("/api/process/start", async (req, res) => {
   let projectResult = resolveProjectFromLocator(req.body || {});
   if (!projectResult.ok) {
     const rawProjectPath =
@@ -597,7 +610,7 @@ app.post("/api/process/start", (req, res) => {
   try {
     const { project } = projectResult;
     const { service, usedDefaultService } = resolveService(project, req.body?.serviceName);
-    processes.start(project, service);
+    await processes.start(project, service);
     const runInfo = processes.getRunInfo(project.id, service.name);
     return res.json({
       ok: true,
@@ -605,6 +618,11 @@ app.post("/api/process/start", (req, res) => {
       process: buildProcessPayload(project, service, runInfo, usedDefaultService),
     });
   } catch (error) {
+    if (error instanceof PortUnavailableError) {
+      return res.status(409).json({
+        error: error.message,
+      });
+    }
     return res.status(400).json({
       error: error instanceof Error ? error.message : "Failed to start process",
     });
@@ -636,7 +654,7 @@ app.post("/api/process/stop", (req, res) => {
   }
 });
 
-app.post("/api/process/restart", (req, res) => {
+app.post("/api/process/restart", async (req, res) => {
   const projectResult = resolveProjectFromLocator(req.body || {});
   if (!projectResult.ok) {
     return res
@@ -647,7 +665,7 @@ app.post("/api/process/restart", (req, res) => {
   try {
     const { project } = projectResult;
     const { service, usedDefaultService } = resolveService(project, req.body?.serviceName);
-    processes.restart(project, service);
+    await processes.restart(project, service);
     const runInfo = processes.getRunInfo(project.id, service.name);
     return res.json({
       ok: true,
@@ -655,6 +673,11 @@ app.post("/api/process/restart", (req, res) => {
       process: buildProcessPayload(project, service, runInfo, usedDefaultService),
     });
   } catch (error) {
+    if (error instanceof PortUnavailableError) {
+      return res.status(409).json({
+        error: error.message,
+      });
+    }
     return res.status(400).json({
       error: error instanceof Error ? error.message : "Failed to restart process",
     });
@@ -740,7 +763,12 @@ app.get("/api/logs", (req, res) => {
     ptyAvailable:
       typeof runInfo.ptyAvailable === "boolean" ? runInfo.ptyAvailable : null,
     effectiveUrl: runInfo.effectiveUrl || null,
-    port: typeof runInfo.port === "number" ? runInfo.port : null,
+    port:
+      typeof runInfo.port === "number"
+        ? runInfo.port
+        : typeof resolvedService.service.port === "number"
+          ? resolvedService.service.port
+          : null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
     lastExitCode:
       typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
@@ -818,7 +846,12 @@ app.get("/api/history", (req, res) => {
     ptyAvailable:
       typeof runInfo.ptyAvailable === "boolean" ? runInfo.ptyAvailable : null,
     effectiveUrl: runInfo.effectiveUrl || null,
-    port: typeof runInfo.port === "number" ? runInfo.port : null,
+    port:
+      typeof runInfo.port === "number"
+        ? runInfo.port
+        : typeof resolvedService.service.port === "number"
+          ? resolvedService.service.port
+          : null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
     lastExitCode:
       typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,

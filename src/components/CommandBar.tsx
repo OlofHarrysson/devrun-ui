@@ -59,6 +59,9 @@ export function CommandBar({
               <code className="inline-block max-w-full truncate rounded-full border border-base-300 bg-base-200 px-2.5 py-1 font-mono text-xs text-base-content/80 sm:max-w-[76ch]">
                 {selectedService.cmd}
               </code>
+              <span className="badge badge-sm badge-outline font-mono">
+                port: {typeof selectedService.port === "number" ? selectedService.port : "auto"}
+              </span>
             </div>
           </div>
 

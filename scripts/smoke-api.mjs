@@ -66,6 +66,16 @@ async function requestJson(url, init) {
   return body;
 }
 
+async function requestWithStatus(url, init) {
+  const response = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : {};
+  return { status: response.status, body };
+}
+
 async function waitForServerReady(baseUrl, logsRef, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -133,6 +143,7 @@ async function main() {
   const logsRef = { value: "" };
   let serverProcess;
   let tempProjectRoot = "";
+  let createdProjectId = "";
 
   try {
     const port = await pickFreePort();
@@ -166,7 +177,7 @@ async function main() {
           name: "devrun-smoke-app",
           private: true,
           scripts: {
-            dev: "node -e \"console.log('Local: http://localhost:4567'); setInterval(() => console.log('tick'), 250);\"",
+            dev: "node -e \"const port=process.env.PORT||4567; console.log('Local: http://localhost:'+port); setInterval(() => console.log('tick'), 250);\"",
           },
         },
         null,
@@ -225,6 +236,7 @@ async function main() {
       typeof project.defaultService === "string" && project.defaultService.length > 0,
       "Expected defaultService in /api/state",
     );
+    createdProjectId = project.id;
     assert(
       service.runId === started.process.runId,
       "Expected /api/state runId to match /api/process/start",
@@ -266,6 +278,90 @@ async function main() {
       (_project, candidateService) =>
         candidateService.running === false && candidateService.status === "stopped",
     );
+
+    const configuredPort = await pickFreePort();
+    await requestJson(`${baseUrl}/api/project-config`, {
+      method: "POST",
+      body: JSON.stringify({
+        projectId: createdProjectId,
+        services: [
+          {
+            name: service.name,
+            cmd: "npm run dev",
+            port: configuredPort,
+          },
+        ],
+      }),
+    });
+
+    const configuredStart = await requestJson(`${baseUrl}/api/process/start`, {
+      method: "POST",
+      body: JSON.stringify({ projectPath: tempProjectRoot }),
+    });
+    assert(
+      configuredStart.process?.port === configuredPort,
+      "Expected configured port in start response when service port is set",
+    );
+
+    await waitForProjectService(
+      baseUrl,
+      tempProjectRoot,
+      (_project, candidateService) =>
+        candidateService.running === true &&
+        candidateService.ready === true &&
+        candidateService.port === configuredPort,
+    );
+
+    await requestJson(`${baseUrl}/api/process/stop`, {
+      method: "POST",
+      body: JSON.stringify({ projectPath: tempProjectRoot }),
+    });
+    await waitForProjectService(
+      baseUrl,
+      tempProjectRoot,
+      (_project, candidateService) =>
+        candidateService.running === false && candidateService.status === "stopped",
+    );
+
+    const conflictPort = await pickFreePort();
+    const occupied = net.createServer();
+    occupied.unref();
+    await new Promise((resolve, reject) => {
+      occupied.once("error", reject);
+      occupied.listen(conflictPort, "127.0.0.1", () => resolve(undefined));
+    });
+    try {
+      await requestJson(`${baseUrl}/api/project-config`, {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: createdProjectId,
+          services: [
+            {
+              name: service.name,
+              cmd: "npm run dev",
+              port: conflictPort,
+            },
+          ],
+        }),
+      });
+
+      const conflictStart = await requestWithStatus(`${baseUrl}/api/process/start`, {
+        method: "POST",
+        body: JSON.stringify({ projectPath: tempProjectRoot }),
+      });
+      assert(conflictStart.status === 409, "Expected 409 when configured port is already in use");
+      assert(
+        typeof conflictStart.body?.error === "string" &&
+          conflictStart.body.error.toLowerCase().includes("configured port"),
+        "Expected configured port conflict message in start error response",
+      );
+    } finally {
+      await new Promise((resolve) => {
+        occupied.close(() => {
+          resolve(undefined);
+        });
+      });
+    }
 
     const state = await requestJson(`${baseUrl}/api/state`);
     const createdProject = Array.isArray(state.projects)

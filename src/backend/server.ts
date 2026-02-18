@@ -23,7 +23,12 @@ const clientLogWss = new WebSocketServer({ noServer: true });
 const processes = new ProcessManager({ devrunPort: PORT });
 const dev = process.env.NODE_ENV !== "production";
 const projectRoot = process.cwd();
-const nextApp = next({ dev, dir: projectRoot });
+const preferWebpackDev = dev && process.env.DEVRUN_USE_TURBOPACK !== "1";
+const nextApp = next({
+  dev,
+  dir: projectRoot,
+  ...(preferWebpackDev ? { webpack: true } : {}),
+});
 const handleNext = nextApp.getRequestHandler();
 
 app.use(express.json({ limit: "1mb" }));

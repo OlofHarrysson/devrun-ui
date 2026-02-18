@@ -5,7 +5,13 @@ import net from "net";
 import { spawn as spawnChild } from "child_process";
 import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
-import type { ProjectService, RegistryEntry, ServiceStatus } from "./types";
+import type {
+  ClientLogEntry,
+  ProjectService,
+  RegistryEntry,
+  ServiceHistoryEventType,
+  ServiceStatus,
+} from "./types";
 import { ServiceHistoryStore } from "./historyStore";
 import { DEVRUN_HOME } from "./storage";
 
@@ -228,12 +234,29 @@ function ensureNodeLocalStorageFile(
   env.NODE_OPTIONS = existing.trim() ? `${existing.trim()} ${option}` : option;
 }
 
-function buildChildEnv(projectId: string, serviceName: string, configuredPort?: number) {
+function bridgeWsUrlForPort(port: number) {
+  return `ws://localhost:${port}/ws/client-logs`;
+}
+
+function buildChildEnv(
+  projectId: string,
+  serviceName: string,
+  runId: string,
+  devrunPort: number,
+  configuredPort?: number,
+) {
   const env: NodeJS.ProcessEnv = { ...process.env };
   // Avoid inheriting server port into child apps (can collide with Devrun itself).
   delete env.PORT;
   if (typeof configuredPort === "number") {
     env.PORT = String(configuredPort);
+  }
+  if (process.env.NODE_ENV === "development") {
+    env.NEXT_PUBLIC_DEVRUN_LOG_BRIDGE_ENABLED = "1";
+    env.NEXT_PUBLIC_DEVRUN_LOG_BRIDGE_WS_URL = bridgeWsUrlForPort(devrunPort);
+    env.NEXT_PUBLIC_DEVRUN_PROJECT_ID = projectId;
+    env.NEXT_PUBLIC_DEVRUN_SERVICE_NAME = serviceName;
+    env.NEXT_PUBLIC_DEVRUN_RUN_ID = runId;
   }
   ensureNodeLocalStorageFile(env, projectId, serviceName);
   return env;
@@ -434,6 +457,8 @@ function createPtyRunner(
   cwd: string,
   projectId: string,
   serviceName: string,
+  runId: string,
+  devrunPort: number,
   configuredPort?: number,
 ): ProcessRunner {
   const pty = spawnPty(shell, ["-lc", command], {
@@ -441,7 +466,7 @@ function createPtyRunner(
     cols: 120,
     rows: 32,
     cwd,
-    env: buildChildEnv(projectId, serviceName, configuredPort),
+    env: buildChildEnv(projectId, serviceName, runId, devrunPort, configuredPort),
   });
 
   return {
@@ -453,12 +478,20 @@ function createPtyRunner(
     },
     interrupt() {
       if (!signalPidOrGroup(pty.pid, "SIGINT")) {
-        pty.write("\u0003");
+        try {
+          pty.kill("SIGINT");
+        } catch {
+          pty.write("\u0003");
+        }
       }
     },
     kill() {
       if (!signalPidOrGroup(pty.pid, "SIGKILL")) {
-        pty.kill();
+        try {
+          pty.kill("SIGKILL");
+        } catch {
+          pty.kill();
+        }
       }
     },
     onData(listener) {
@@ -478,11 +511,13 @@ function createPipeRunner(
   cwd: string,
   projectId: string,
   serviceName: string,
+  runId: string,
+  devrunPort: number,
   configuredPort?: number,
 ): ProcessRunner {
   const child = spawnChild(shell, ["-lc", command], {
     cwd,
-    env: buildChildEnv(projectId, serviceName, configuredPort),
+    env: buildChildEnv(projectId, serviceName, runId, devrunPort, configuredPort),
     stdio: "pipe",
     detached: process.platform !== "win32",
   });
@@ -535,6 +570,15 @@ export class ProcessManager {
   private recentLogs = new Map<string, RecentLog>();
   private replacedRunIds = new Set<string>();
   private history = new ServiceHistoryStore({ retention: HISTORY_RETENTION });
+  private readonly devrunPort: number;
+
+  constructor(options?: { devrunPort?: number }) {
+    const configuredPort = options?.devrunPort;
+    this.devrunPort =
+      typeof configuredPort === "number" && Number.isInteger(configuredPort) && configuredPort > 0
+        ? configuredPort
+        : 4317;
+  }
 
   isRunning(projectId: string, serviceName: string) {
     return this.sessions.has(makeKey(projectId, serviceName));
@@ -569,6 +613,90 @@ export class ProcessManager {
 
   clearHistoryForProject(projectId: string) {
     this.history.clearProject(projectId);
+  }
+
+  private broadcastOutput(session: Session, data: string) {
+    if (!data) {
+      return;
+    }
+
+    for (const client of session.clients) {
+      if (client.readyState === client.OPEN) {
+        client.send(JSON.stringify({ type: "output", data }));
+      }
+    }
+  }
+
+  private getSessionForRun(projectId: string, serviceName: string, runId: string) {
+    const session = this.sessions.get(makeKey(projectId, serviceName));
+    if (!session) {
+      return { ok: false as const, error: "Process is not running" };
+    }
+    if (!runId) {
+      return { ok: false as const, error: "Missing runId" };
+    }
+    if (session.runId !== runId) {
+      return {
+        ok: false as const,
+        error: `Run mismatch (expected ${runId}, active ${session.runId})`,
+      };
+    }
+    return { ok: true as const, session };
+  }
+
+  validateClientLogTarget(projectId: string, serviceName: string, runId: string) {
+    const target = this.getSessionForRun(projectId, serviceName, runId);
+    if (!target.ok) {
+      return target;
+    }
+
+    return {
+      ok: true as const,
+      runId: target.session.runId,
+    };
+  }
+
+  ingestClientLogs(
+    projectId: string,
+    serviceName: string,
+    runId: string,
+    entries: ClientLogEntry[],
+  ) {
+    const target = this.getSessionForRun(projectId, serviceName, runId);
+    if (!target.ok) {
+      return target;
+    }
+
+    if (!entries.length) {
+      return { ok: true as const, ingested: 0 };
+    }
+
+    const session = target.session;
+    let chunk = "";
+    for (const entry of entries) {
+      const at = Number.isFinite(Date.parse(entry.ts))
+        ? new Date(entry.ts).toISOString()
+        : new Date().toISOString();
+      const level = entry.level || "log";
+      const pathLabel = entry.path ? entry.path.replace(/\s+/g, " ").trim() : "/";
+      const message = entry.message ? entry.message.replace(/\s+/g, " ").trim() : "";
+      const line = `[browser:${level}] ${pathLabel || "/"}${message ? ` ${message}` : ""}`;
+      chunk = `${chunk}${marker(line, at)}`;
+      this.recordHistory(session.projectId, session.serviceName, "client_log", {
+        runId: session.runId,
+        data: {
+          source: entry.source,
+          level: entry.level,
+          message: entry.message,
+          path: entry.path,
+          clientId: entry.clientId,
+        },
+      });
+    }
+
+    this.appendLog(session, chunk);
+    this.broadcastOutput(session, chunk);
+    return { ok: true as const, ingested: entries.length };
   }
 
   private saveOwnedRun(entry: OwnedRunRecord) {
@@ -643,7 +771,7 @@ export class ProcessManager {
   private recordHistory(
     projectId: string,
     serviceName: string,
-    type: "start" | "stop_requested" | "restart_requested" | "stdin_command" | "exit",
+    type: ServiceHistoryEventType,
     options?: {
       runId?: string;
       data?: Record<string, unknown>;
@@ -789,22 +917,39 @@ export class ProcessManager {
     const cwd = service.cwd
       ? path.resolve(project.root, service.cwd)
       : project.root;
+    const runId = randomUUID();
+    const startedAt = new Date().toISOString();
 
     let runner: ProcessRunner;
     let modeNotice = "";
     let ptyWarning = "";
     try {
-      runner = createPtyRunner(shell, service.cmd, cwd, project.id, service.name, service.port);
+      runner = createPtyRunner(
+        shell,
+        service.cmd,
+        cwd,
+        project.id,
+        service.name,
+        runId,
+        this.devrunPort,
+        service.port,
+      );
     } catch (error) {
-      runner = createPipeRunner(shell, service.cmd, cwd, project.id, service.name, service.port);
+      runner = createPipeRunner(
+        shell,
+        service.cmd,
+        cwd,
+        project.id,
+        service.name,
+        runId,
+        this.devrunPort,
+        service.port,
+      );
       const reason =
         error instanceof Error ? error.message : "Failed to initialize PTY";
       ptyWarning = `PTY unavailable, using pipe mode: ${reason}`;
       modeNotice = marker(`[${ptyWarning}]`);
     }
-
-    const runId = randomUUID();
-    const startedAt = new Date().toISOString();
     const session: Session = {
       key,
       projectId: project.id,
@@ -854,12 +999,7 @@ export class ProcessManager {
     runner.onData((data) => {
       this.appendLog(session, data);
       this.updateRuntimeMetadata(session, data);
-
-      for (const client of session.clients) {
-        if (client.readyState === client.OPEN) {
-          client.send(JSON.stringify({ type: "output", data }));
-        }
-      }
+      this.broadcastOutput(session, data);
     });
 
     runner.onExit((exitCode) => {

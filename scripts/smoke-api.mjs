@@ -6,6 +6,7 @@ import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
+import { WebSocket } from "ws";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -117,6 +118,41 @@ async function waitForProjectService(baseUrl, projectRoot, predicate, timeoutMs 
   }
 
   throw new Error(`Timed out waiting for project/service state for ${projectRoot}`);
+}
+
+async function openWebSocket(url, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url);
+    let done = false;
+
+    const finish = (cb, value) => {
+      if (done) {
+        return;
+      }
+      done = true;
+      clearTimeout(timeout);
+      cb(value);
+    };
+
+    const timeout = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+        // no-op
+      }
+      finish(reject, new Error(`Timed out opening WebSocket: ${url}`));
+    }, timeoutMs);
+
+    ws.once("open", () => {
+      finish(resolve, ws);
+    });
+    ws.once("error", (error) => {
+      finish(
+        reject,
+        error instanceof Error ? error : new Error(`WebSocket error: ${String(error)}`),
+      );
+    });
+  });
 }
 
 async function stopServer(child) {
@@ -266,6 +302,70 @@ async function main() {
     assert(logs.serviceName === started.process.serviceName, "Expected serviceName in /api/logs");
     assert(typeof logs.output === "string", "Expected output string in /api/logs");
     assert(logs.output.includes("$ npm run dev"), "Expected command marker in /api/logs output");
+
+    const wsBaseUrl = baseUrl.replace(/^http/, "ws");
+    const clientLogWsUrl =
+      `${wsBaseUrl}/ws/client-logs?projectId=${encodeURIComponent(project.id)}` +
+      `&serviceName=${encodeURIComponent(service.name)}` +
+      `&runId=${encodeURIComponent(started.process.runId)}`;
+    const clientLogWs = await openWebSocket(clientLogWsUrl);
+    clientLogWs.send(
+      JSON.stringify({
+        type: "client_log_batch",
+        entries: [
+          {
+            level: "warn",
+            ts: new Date().toISOString(),
+            message: "smoke warn bridge",
+            path: "/smoke",
+            source: "console",
+            clientId: "smoke-client",
+          },
+          {
+            level: "debug",
+            ts: new Date().toISOString(),
+            message: "smoke debug bridge",
+            path: "/smoke",
+            source: "console",
+            clientId: "smoke-client",
+          },
+        ],
+      }),
+    );
+    await sleep(150);
+    try {
+      clientLogWs.close();
+    } catch {
+      // no-op
+    }
+
+    const logsAfterClientBridge = await requestJson(
+      `${baseUrl}/api/logs?projectPath=${encodeURIComponent(tempProjectRoot)}&chars=6000`,
+    );
+    assert(
+      logsAfterClientBridge.output.includes("[browser:warn] /smoke smoke warn bridge"),
+      "Expected warn browser log in /api/logs output",
+    );
+    assert(
+      logsAfterClientBridge.output.includes("[browser:debug] /smoke smoke debug bridge"),
+      "Expected debug browser log in /api/logs output",
+    );
+
+    const historyAfterClientBridge = await requestJson(
+      `${baseUrl}/api/history?projectPath=${encodeURIComponent(tempProjectRoot)}&limit=50`,
+    );
+    assert(
+      historyAfterClientBridge.events.some(
+        (event) => event.type === "client_log" && event.data?.level === "warn",
+      ),
+      "Expected warn client_log event in /api/history",
+    );
+    assert(
+      historyAfterClientBridge.events.some(
+        (event) => event.type === "client_log" && event.data?.level === "debug",
+      ),
+      "Expected debug client_log event in /api/history",
+    );
 
     await requestJson(`${baseUrl}/api/process/stop`, {
       method: "POST",

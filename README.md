@@ -101,6 +101,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `GET /api/logs?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&chars=4000`
 - `POST /api/snapshot`
 - `WS /ws?projectId=...&serviceName=...`
+- `WS /ws/client-logs?projectId=...&serviceName=...&runId=...`
 
 ### Run identity
 
@@ -109,14 +110,30 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - Runtime snapshots expose `status` (`starting|ready|stopped|error`) and `ready` to avoid log-scraping for readiness.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
 - `WS /ws` accepts optional `runId` query param to ensure terminal attach targets the expected run.
+- `WS /ws/client-logs` requires `runId` and only accepts logs for the currently active run.
 
 ### Event history (low-noise)
 
 - `GET /api/history` returns per-service event history with retention of the latest `100` events.
-- Event types are: `start`, `stop_requested`, `restart_requested`, `stdin_command`, `exit`.
+- Event types are: `start`, `stop_requested`, `restart_requested`, `stdin_command`, `exit`, `client_log`.
 - `exit` events may include `data.replacedByRestart: true` when the old run is intentionally replaced during restart.
 - Use this for workflow timeline and command context.
 - Keep `GET /api/logs` for verbose service output (stdout/stderr tail).
+
+### Browser client log bridge (dev)
+
+- Managed services started in `NODE_ENV=development` receive bridge env vars:
+  - `NEXT_PUBLIC_DEVRUN_LOG_BRIDGE_ENABLED=1`
+  - `NEXT_PUBLIC_DEVRUN_LOG_BRIDGE_WS_URL`
+  - `NEXT_PUBLIC_DEVRUN_PROJECT_ID`
+  - `NEXT_PUBLIC_DEVRUN_SERVICE_NAME`
+  - `NEXT_PUBLIC_DEVRUN_RUN_ID`
+- Browser apps can forward logs via WS messages:
+  - `{"type":"client_log_batch","entries":[{"level":"debug|log|info|warn|error","ts":"ISO-8601","message":"...","path":"...","source":"console|window_error|unhandledrejection","clientId":"..."}]}`
+- Limits:
+  - max `50` entries/message
+  - max `2000` chars per text field
+  - max `16KB` raw WS payload (oversized messages are ignored)
 
 ### AI polling recipe
 

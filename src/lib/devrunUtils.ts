@@ -132,6 +132,7 @@ export function historyTypeBadgeClass(type: string): string {
     restart_requested: "badge badge-info badge-soft",
     stdin_command: "badge badge-primary badge-soft",
     exit: "badge badge-neutral badge-soft",
+    client_log: "badge badge-secondary badge-soft",
   };
   return map[type] || "badge badge-neutral badge-soft";
 }
@@ -167,6 +168,7 @@ export function historyEventLabel(type: string): string {
     restart_requested: "restart",
     stdin_command: "stdin",
     exit: "exit",
+    client_log: "client",
   };
   return labels[type] || type || "event";
 }
@@ -202,6 +204,14 @@ export function historyEventSummary(event: HistoryEvent): string {
 
   if (event.type === "stop_requested") {
     return "stop requested";
+  }
+
+  if (event.type === "client_log") {
+    const level = typeof data.level === "string" ? data.level : "log";
+    const logPath = typeof data.path === "string" ? data.path : "/";
+    const message = typeof data.message === "string" ? data.message : "";
+    const summary = `${level} ${logPath}${message ? ` ${message}` : ""}`.trim();
+    return summary.length > 160 ? `${summary.slice(0, 157)}...` : summary;
   }
 
   return "event";

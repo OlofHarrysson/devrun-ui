@@ -55,12 +55,26 @@ export type RunningService = {
   port?: number;
 };
 
+export type ClientLogLevel = "debug" | "log" | "info" | "warn" | "error";
+
+export type ClientLogSource = "console" | "window_error" | "unhandledrejection";
+
+export type ClientLogEntry = {
+  level: ClientLogLevel;
+  ts: string;
+  message: string;
+  path: string;
+  source: ClientLogSource;
+  clientId: string;
+};
+
 export type ServiceHistoryEventType =
   | "start"
   | "stop_requested"
   | "restart_requested"
   | "stdin_command"
-  | "exit";
+  | "exit"
+  | "client_log";
 
 export type ServiceHistoryEvent = {
   seq: number;

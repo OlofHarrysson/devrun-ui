@@ -1,9 +1,10 @@
 import fs from "fs";
 import path from "path";
 import http, { type IncomingMessage } from "http";
+import type { Socket } from "net";
 import express, { type Response } from "express";
 import next from "next";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type RawData } from "ws";
 import { readRegistry, addProject, removeProject, getRegistryPath } from "./registry";
 import {
   getProjectConfigPath,
@@ -12,19 +13,52 @@ import {
   writeProjectConfig,
 } from "./config";
 import { PortUnavailableError, ProcessManager } from "./processManager";
-import type { ProjectConfig, ProjectService, ProjectState, RegistryEntry } from "./types";
+import type { ClientLogEntry, ProjectConfig, ProjectService, ProjectState, RegistryEntry } from "./types";
 
 const PORT = Number(process.env.PORT || 4317);
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
-const processes = new ProcessManager();
+const wss = new WebSocketServer({ noServer: true });
+const clientLogWss = new WebSocketServer({ noServer: true });
+const processes = new ProcessManager({ devrunPort: PORT });
 const dev = process.env.NODE_ENV !== "production";
 const projectRoot = process.cwd();
 const nextApp = next({ dev, dir: projectRoot });
 const handleNext = nextApp.getRequestHandler();
 
 app.use(express.json({ limit: "1mb" }));
+
+const CLIENT_LOG_MAX_RAW_BYTES = 16 * 1024;
+const CLIENT_LOG_MAX_ENTRIES = 50;
+const CLIENT_LOG_FIELD_MAX_CHARS = 2000;
+const CLIENT_LOG_LEVELS = new Set(["debug", "log", "info", "warn", "error"]);
+const CLIENT_LOG_SOURCES = new Set(["console", "window_error", "unhandledrejection"]);
+
+function getUpgradePath(req: IncomingMessage): string {
+  try {
+    const baseUrl = `http://${req.headers.host || "localhost"}`;
+    return new URL(req.url || "/", baseUrl).pathname;
+  } catch {
+    return "";
+  }
+}
+
+server.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
+  const pathname = getUpgradePath(req);
+  if (pathname === "/ws") {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit("connection", ws, req);
+    });
+    return;
+  }
+  if (pathname === "/ws/client-logs") {
+    clientLogWss.handleUpgrade(req, socket, head, (ws) => {
+      clientLogWss.emit("connection", ws, req);
+    });
+    return;
+  }
+  // Allow other upgrade listeners (e.g. Next.js dev tooling) to handle unmatched paths.
+});
 
 const LEGACY_LOCAL_STORAGE_CMD =
   "NODE_OPTIONS='--localstorage-file=.devrun-localstorage.json' npm run dev";
@@ -424,6 +458,101 @@ function parseIntegerQuery(
   return { ok: true as const, value };
 }
 
+function rawDataByteLength(raw: RawData): number {
+  if (typeof raw === "string") {
+    return Buffer.byteLength(raw);
+  }
+  if (raw instanceof Buffer) {
+    return raw.byteLength;
+  }
+  if (Array.isArray(raw)) {
+    return raw.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  }
+  return raw.byteLength;
+}
+
+function rawDataToString(raw: RawData): string {
+  if (typeof raw === "string") {
+    return raw;
+  }
+  if (raw instanceof Buffer) {
+    return raw.toString("utf8");
+  }
+  if (Array.isArray(raw)) {
+    return Buffer.concat(raw).toString("utf8");
+  }
+  return Buffer.from(raw as ArrayBuffer).toString("utf8");
+}
+
+function sanitizeClientLogText(input: unknown): string {
+  if (typeof input !== "string") {
+    return "";
+  }
+  return input.replace(/\s+/g, " ").trim().slice(0, CLIENT_LOG_FIELD_MAX_CHARS);
+}
+
+function normalizeClientLogTimestamp(input: unknown): string {
+  if (typeof input !== "string") {
+    return new Date().toISOString();
+  }
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString();
+  }
+  return date.toISOString();
+}
+
+function parseClientLogBatch(input: unknown) {
+  if (!input || typeof input !== "object") {
+    return { ok: false as const, error: "Malformed payload" };
+  }
+
+  const payload = input as { type?: unknown; entries?: unknown };
+  if (payload.type !== "client_log_batch") {
+    return { ok: false as const, error: "Unsupported client log message type" };
+  }
+  if (!Array.isArray(payload.entries)) {
+    return { ok: false as const, error: "Missing entries array" };
+  }
+  if (payload.entries.length > CLIENT_LOG_MAX_ENTRIES) {
+    return { ok: false as const, error: "Too many client log entries in one message" };
+  }
+
+  const entries: ClientLogEntry[] = [];
+  for (const rawEntry of payload.entries) {
+    if (!rawEntry || typeof rawEntry !== "object") {
+      return { ok: false as const, error: "Invalid client log entry" };
+    }
+    const entry = rawEntry as {
+      level?: unknown;
+      ts?: unknown;
+      message?: unknown;
+      path?: unknown;
+      source?: unknown;
+      clientId?: unknown;
+    };
+    const level = sanitizeClientLogText(entry.level).toLowerCase();
+    const source = sanitizeClientLogText(entry.source).toLowerCase();
+    if (!CLIENT_LOG_LEVELS.has(level)) {
+      return { ok: false as const, error: `Invalid client log level '${level || "unknown"}'` };
+    }
+    if (!CLIENT_LOG_SOURCES.has(source)) {
+      return { ok: false as const, error: `Invalid client log source '${source || "unknown"}'` };
+    }
+
+    entries.push({
+      level: level as ClientLogEntry["level"],
+      ts: normalizeClientLogTimestamp(entry.ts),
+      message: sanitizeClientLogText(entry.message),
+      path: sanitizeClientLogText(entry.path) || "/",
+      source: source as ClientLogEntry["source"],
+      clientId: sanitizeClientLogText(entry.clientId) || "unknown-client",
+    });
+  }
+
+  return { ok: true as const, entries };
+}
+
 app.get("/api/state", (_req, res) => {
   res.json(buildState());
 });
@@ -453,7 +582,7 @@ app.get("/api/capabilities", (_req, res) => {
           limit: `optional integer, default 25, max ${processes.historyRetention()}`,
         },
         description:
-          "Returns non-verbose lifecycle/command events (start, stop_requested, restart_requested, stdin_command, exit).",
+          "Returns non-verbose lifecycle/command events (start, stop_requested, restart_requested, stdin_command, exit, client_log).",
       },
       logs: {
         method: "GET",
@@ -495,6 +624,19 @@ app.get("/api/capabilities", (_req, res) => {
           runId: "optional string",
         },
       },
+      clientLogWs: {
+        method: "WS",
+        path: "/ws/client-logs",
+        query: {
+          projectId: "required string",
+          serviceName: "required string",
+          runId: "required string (must match active run)",
+        },
+        message: {
+          type: "client_log_batch",
+          entries: `array (max ${CLIENT_LOG_MAX_ENTRIES}) of { level, ts, message, path, source, clientId }`,
+        },
+      },
     },
     pollingRecipe: [
       "Call GET /api/state to discover projects, defaultService, and runtime metadata.",
@@ -505,6 +647,7 @@ app.get("/api/capabilities", (_req, res) => {
       "Call POST /api/process/cleanup-orphans if runtime state looks desynced after crashes/restarts.",
       "Configured service ports are strict; start/restart returns HTTP 409 when the port is in use.",
       "Use GET /api/logs with runId for verbose output when needed.",
+      "Use WS /ws/client-logs to forward browser-side logs into terminal/history for the active run.",
     ],
   });
 });
@@ -950,6 +1093,50 @@ wss.on("connection", (ws, req: IncomingMessage) => {
   });
 });
 
+clientLogWss.on("connection", (ws, req: IncomingMessage) => {
+  const baseUrl = `http://${req.headers.host || "localhost"}`;
+  const url = new URL(req.url || "/ws/client-logs", baseUrl);
+  const projectId = url.searchParams.get("projectId") || "";
+  const serviceName = url.searchParams.get("serviceName") || "";
+  const runId = url.searchParams.get("runId") || "";
+
+  if (!projectId || !serviceName || !runId) {
+    ws.close(1008, "Missing projectId/serviceName/runId");
+    return;
+  }
+
+  const validated = processes.validateClientLogTarget(projectId, serviceName, runId);
+  if (!validated.ok) {
+    ws.close(1008, validated.error);
+    return;
+  }
+
+  ws.on("message", (raw: RawData) => {
+    if (rawDataByteLength(raw) > CLIENT_LOG_MAX_RAW_BYTES) {
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawDataToString(raw));
+    } catch {
+      ws.close(1008, "Malformed client log payload");
+      return;
+    }
+
+    const batch = parseClientLogBatch(parsed);
+    if (!batch.ok) {
+      ws.close(1008, batch.error);
+      return;
+    }
+
+    const result = processes.ingestClientLogs(projectId, serviceName, runId, batch.entries);
+    if (!result.ok) {
+      ws.close(1008, result.error);
+    }
+  });
+});
+
 app.all("*", (req, res) => {
   void handleNext(req, res);
 });
@@ -972,13 +1159,23 @@ async function start() {
 }
 
 const SHUTDOWN_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+const SHUTDOWN_FORCE_EXIT_MS = 4500;
 let shuttingDown = false;
 
 async function shutdown(signal: NodeJS.Signals) {
   if (shuttingDown) {
+    console.warn(`[devrun-ui] received ${signal} during shutdown, forcing exit`);
+    process.exit(130);
     return;
   }
   shuttingDown = true;
+  const forceExitTimer = setTimeout(() => {
+    console.warn(
+      `[devrun-ui] shutdown exceeded ${SHUTDOWN_FORCE_EXIT_MS}ms, forcing exit`,
+    );
+    process.exit(1);
+  }, SHUTDOWN_FORCE_EXIT_MS);
+  forceExitTimer.unref();
 
   console.log(`[devrun-ui] received ${signal}, stopping managed processes...`);
 
@@ -994,6 +1191,7 @@ async function shutdown(signal: NodeJS.Signals) {
   } catch (error) {
     console.error("[devrun-ui] failed during graceful shutdown", error);
   } finally {
+    clearTimeout(forceExitTimer);
     process.exit(0);
   }
 }

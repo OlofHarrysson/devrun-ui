@@ -79,6 +79,9 @@ const READY_GRACE_MS = 2500;
 const LOCAL_STORAGE_RUNTIME_DIR = path.join(DEVRUN_HOME, "runtime", "localstorage");
 const RESTART_PORT_RELEASE_TIMEOUT_MS = 4000;
 const PORT_RELEASE_POLL_MS = 120;
+const STOP_KILL_TIMEOUT_MS = 1200;
+const STOP_ALL_WAIT_TIMEOUT_MS = 6000;
+const STOP_ALL_POLL_MS = 50;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
@@ -692,29 +695,25 @@ export class ProcessManager {
     return session;
   }
 
-  stop(projectId: string, serviceName: string) {
-    const key = makeKey(projectId, serviceName);
-    const session = this.sessions.get(key);
-    if (!session) {
-      return false;
+  private requestStop(session: Session) {
+    if (!session.stopRequested) {
+      this.recordHistory(session.projectId, session.serviceName, "stop_requested", {
+        runId: session.runId,
+      });
+      session.stopRequested = true;
     }
-
-    this.recordHistory(projectId, serviceName, "stop_requested", {
-      runId: session.runId,
-    });
-    session.stopRequested = true;
 
     try {
       session.runner.interrupt();
       setTimeout(() => {
-        if (this.sessions.has(key)) {
+        if (this.sessions.get(session.key) === session) {
           try {
             session.runner.kill();
           } catch {
             // ignore race while exiting
           }
         }
-      }, 1200);
+      }, STOP_KILL_TIMEOUT_MS);
     } catch {
       try {
         session.runner.kill();
@@ -722,8 +721,82 @@ export class ProcessManager {
         // no-op
       }
     }
+  }
+
+  stop(projectId: string, serviceName: string) {
+    const key = makeKey(projectId, serviceName);
+    const session = this.sessions.get(key);
+    if (!session) {
+      return false;
+    }
+
+    this.requestStop(session);
 
     return true;
+  }
+
+  async stopAll() {
+    const runningSessions = Array.from(this.sessions.values());
+    if (!runningSessions.length) {
+      return {
+        requested: 0,
+        stopped: 0,
+        remaining: 0,
+      };
+    }
+
+    const targetKeys = new Set<string>();
+    for (const session of runningSessions) {
+      targetKeys.add(session.key);
+      this.requestStop(session);
+    }
+
+    const deadline = Date.now() + STOP_ALL_WAIT_TIMEOUT_MS;
+    while (targetKeys.size && Date.now() < deadline) {
+      for (const key of [...targetKeys]) {
+        if (!this.sessions.has(key)) {
+          targetKeys.delete(key);
+        }
+      }
+      if (!targetKeys.size) {
+        break;
+      }
+      await sleep(STOP_ALL_POLL_MS);
+    }
+
+    if (targetKeys.size) {
+      for (const key of [...targetKeys]) {
+        const session = this.sessions.get(key);
+        if (!session) {
+          targetKeys.delete(key);
+          continue;
+        }
+        try {
+          session.runner.kill();
+        } catch {
+          // ignore race while exiting
+        }
+      }
+
+      const forcedDeadline = Date.now() + STOP_KILL_TIMEOUT_MS;
+      while (targetKeys.size && Date.now() < forcedDeadline) {
+        for (const key of [...targetKeys]) {
+          if (!this.sessions.has(key)) {
+            targetKeys.delete(key);
+          }
+        }
+        if (!targetKeys.size) {
+          break;
+        }
+        await sleep(STOP_ALL_POLL_MS);
+      }
+    }
+
+    return {
+      requested: runningSessions.length,
+      stopped: runningSessions.length - targetKeys.size,
+      remaining: targetKeys.size,
+    };
   }
 
   async restart(project: RegistryEntry, service: ProjectService) {

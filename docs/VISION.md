@@ -9,6 +9,7 @@ Devrun is the simplest local control center for running and observing multiple d
 ## The problem
 Developers working across 5-10 projects constantly context-switch between terminals, scripts, and tabs to start services, inspect logs, and recover from failures.
 This is noisy, slow, and hard to hand off to AI tooling.
+The second problem is that AIs and humans can't share one terminal and that it's hard for the AI to inspect the terminal to understand the project, especially when debugging.
 
 ## Product promise
 From one interface, a developer should be able to:

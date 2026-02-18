@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## One-line vision
+Devrun is the simplest local control center for running and observing multiple dev projects and their long-running services, with AI-ready access to what is happening.
+
+## The problem
+Developers working across 5-10 projects constantly context-switch between terminals, scripts, and tabs to start services, inspect logs, and recover from failures.
+This is noisy, slow, and hard to hand off to AI tooling.
+The second problem is that AIs and humans can't share one terminal and that it's hard for the AI to inspect the terminal to understand the project, especially when debugging.
+
 ## Project Structure & Module Organization
 - `src/app/`: Next.js App Router entry files (`layout.tsx`, `page.tsx`).
 - `src/components/`, `src/hooks/`, `src/lib/`, `src/stores/`, `src/types/`: shared UI modules.

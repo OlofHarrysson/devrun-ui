@@ -946,6 +946,39 @@ async function start() {
   });
 }
 
+const SHUTDOWN_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+let shuttingDown = false;
+
+async function shutdown(signal: NodeJS.Signals) {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+
+  console.log(`[devrun-ui] received ${signal}, stopping managed processes...`);
+
+  try {
+    const result = await processes.stopAll();
+    if (result.remaining > 0) {
+      console.warn(
+        `[devrun-ui] graceful shutdown stopped ${result.stopped}/${result.requested} managed service(s) before exit`,
+      );
+    } else if (result.requested > 0) {
+      console.log(`[devrun-ui] stopped ${result.stopped} managed service(s)`);
+    }
+  } catch (error) {
+    console.error("[devrun-ui] failed during graceful shutdown", error);
+  } finally {
+    process.exit(0);
+  }
+}
+
+for (const signal of SHUTDOWN_SIGNALS) {
+  process.on(signal, () => {
+    void shutdown(signal);
+  });
+}
+
 start().catch((error) => {
   console.error("[devrun-ui] failed to start", error);
   process.exit(1);

@@ -90,7 +90,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `GET /api/state`
 - `GET /api/capabilities`
 - `POST /api/projects`
-- `POST /api/project-config`
+- `POST /api/project-config` (update services/defaultService for an existing project)
 - `DELETE /api/projects/:projectId`
 - `POST /api/process/start` (auto-registers an existing directory when called with `projectPath`/`cwd` for an unknown project)
 - `POST /api/process/stop`
@@ -102,6 +102,32 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/snapshot`
 - `WS /ws?projectId=...&serviceName=...`
 - `WS /ws/client-logs?projectId=...&serviceName=...&runId=...`
+
+### Project config endpoint
+
+Use `POST /api/project-config` to update project display name, services, and `defaultService` for an existing project.
+
+```bash
+curl -s -X POST http://localhost:4317/api/project-config \
+  -H "content-type: application/json" \
+  -d '{
+    "projectId":"<PROJECT_ID>",
+    "name":"My project",
+    "defaultService":"web",
+    "services":[
+      {"name":"web","cmd":"npm run dev","cwd":".","port":3000},
+      {"name":"worker","cmd":"npm run worker","cwd":"apps/worker"}
+    ]
+  }' | jq
+```
+
+Notes:
+- `projectId` is required (`404` if project does not exist).
+- `services` must contain at least one valid `{ name, cmd }` entry.
+- Service names must be unique (case-insensitive).
+- `defaultService` must match one configured service name.
+- `port`, when set, must be an integer from `1` to `65535`.
+- If command starts with `PORT=<n>`, explicit `port` must match `<n>`.
 
 ### Run identity
 
@@ -149,7 +175,15 @@ curl -s http://localhost:4317/api/capabilities | jq
 curl -s http://localhost:4317/api/state | jq
 ```
 
-3. Start by project path (no ID lookup and no service name required):
+3. (Optional) Update service config/default service by `projectId`:
+
+```bash
+curl -s -X POST http://localhost:4317/api/project-config \
+  -H "content-type: application/json" \
+  -d '{"projectId":"<PROJECT_ID>","services":[{"name":"web","cmd":"npm run dev"}],"defaultService":"web"}' | jq
+```
+
+4. Start by project path (no ID lookup and no service name required):
 
 ```bash
 curl -s -X POST http://localhost:4317/api/process/start \
@@ -157,19 +191,19 @@ curl -s -X POST http://localhost:4317/api/process/start \
   -d '{"projectPath":"/Users/olof/git/youtube-looper"}' | jq
 ```
 
-4. First history read (path-first, default service):
+5. First history read (path-first, default service):
 
 ```bash
 curl -s "http://localhost:4317/api/history?projectPath=/Users/olof/git/youtube-looper" | jq
 ```
 
-5. Incremental polling (cursor-based):
+6. Incremental polling (cursor-based):
 
 ```bash
 curl -s "http://localhost:4317/api/history?projectPath=/Users/olof/git/youtube-looper&afterSeq=<NEXT_AFTER_SEQ>" | jq
 ```
 
-6. Verbose logs (optionally scoped to a run):
+7. Verbose logs (optionally scoped to a run):
 
 ```bash
 curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-looper&chars=8000" | jq

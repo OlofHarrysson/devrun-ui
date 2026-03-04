@@ -1,6 +1,6 @@
 # devrun-ui
 
-Local GUI to run long-lived dev services per project, with real PTY terminals in the browser.
+Local GUI to run long-lived dev services per project, with browser terminals backed by stdout/stderr pipes.
 
 ## Product direction
 
@@ -88,6 +88,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 ## API surface (MVP)
 
 - `GET /api/state`
+- `GET /api/projects`
 - `GET /api/capabilities`
 - `POST /api/projects`
 - `POST /api/project-config`
@@ -98,9 +99,9 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/process/stdin`
 - `POST /api/process/cleanup-orphans`
 - `GET /api/history?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&afterSeq=0&limit=25`
-- `GET /api/logs?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&chars=4000`
+- `GET /api/logs?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&chars=4000[&lines=500]`
 - `POST /api/snapshot`
-- `WS /ws?projectId=...&serviceName=...`
+- `WS /ws?projectId=...&serviceName=...[&replay=1|0][&runId=<RUN_ID>]`
 - `WS /ws/client-logs?projectId=...&serviceName=...&runId=...`
 
 ### Run identity
@@ -109,6 +110,8 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
 - Runtime snapshots expose `status` (`starting|ready|stopped|error`) and `ready` to avoid log-scraping for readiness.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
+- `GET /api/logs` supports `chars` (200-50,000) and `lines` (1-500); when `lines` is provided it takes precedence over `chars`.
+- Runtime metadata is currently pipe-only (`terminalMode="pipe"`, `ptyAvailable=false`).
 - `WS /ws` accepts optional `runId` query param to ensure terminal attach targets the expected run.
 - `WS /ws/client-logs` requires `runId` and only accepts logs for the currently active run.
 
@@ -173,6 +176,8 @@ curl -s "http://localhost:4317/api/history?projectPath=/Users/olof/git/youtube-l
 
 ```bash
 curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-looper&chars=8000" | jq
+# Or request by line count (max 500 lines):
+# curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-looper&lines=500" | jq
 # Optional run scoping:
 # curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-looper&runId=<RUN_ID>&chars=8000" | jq
 ```

@@ -1,7 +1,7 @@
 {
   "name": "devrun-ui",
   "version": "0.1.0",
-  "description": "Local GUI process manager with PTY terminals",
+  "description": "Local GUI process manager with browser terminal streaming",
   "main": "dist/server.js",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch src/backend/server.ts",
@@ -14,7 +14,6 @@
   },
   "keywords": [
     "process-manager",
-    "pty",
     "xterm",
     "local-dev"
   ],
@@ -26,7 +25,6 @@
     "@xterm/xterm": "^6.0.0",
     "express": "^4.21.2",
     "next": "^16.1.6",
-    "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "ws": "^8.18.0",

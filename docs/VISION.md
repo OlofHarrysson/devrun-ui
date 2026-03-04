@@ -22,7 +22,7 @@ From one interface, a developer should be able to:
 - Local-first: run on localhost, no cloud dependency required.
 - Fast path first: optimize for "I need this running now" workflows.
 - Low ceremony: minimal setup, no container complexity required.
-- Transparent process control: each service is a real shell process with real terminal IO.
+- Transparent process control: each service is a real shell process with streamed stdin/stdout/stderr access.
 - AI-compatible by default: state and logs are easy to fetch programmatically.
 
 ## Target users

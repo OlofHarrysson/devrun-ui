@@ -17,6 +17,11 @@ The second problem is that AIs and humans can't share one terminal and that it's
 - `scripts/`: local validation utilities (for example `smoke-api.mjs`).
 - `dist/` and `.devrun/`: generated build/runtime artifacts (ignored by Git).
 
+## Documentation Index
+- `README.md`: primary setup/usage/API contract reference for this repo.
+- `docs/VISION.md`: stable product direction and scope guardrails.
+- `AGENTS.md` (this file): contributor and implementation workflow conventions.
+
 ## Build, Test, and Development Commands
 - `npm run dev`: start local dev server with watch mode (`tsx watch src/backend/server.ts`).
 - `npm run build`: build Next.js app and compile server TypeScript (`dist/`).
@@ -32,6 +37,7 @@ The second problem is that AIs and humans can't share one terminal and that it's
 - Omit `serviceName` to use project `defaultService` unless a non-default service is intended.
 - Use `GET /api/history` for low-noise lifecycle/command timeline.
 - Use `GET /api/logs` for verbose output; pass `runId` when run-specific debugging is needed.
+- For larger single pulls, use `GET /api/logs?...&lines=500` (line-tail mode; `lines` overrides `chars`).
 - Use `GET /api/state` when project/service discovery or runtime status metadata is needed.
 
 ## Coding Style & Naming Conventions

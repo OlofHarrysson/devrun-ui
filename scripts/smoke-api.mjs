@@ -244,14 +244,8 @@ async function main() {
       typeof started.process?.runId === "string" && started.process.runId.length > 0,
       "Expected runId in start response",
     );
-    assert(
-      started.process?.terminalMode === "pty" || started.process?.terminalMode === "pipe",
-      "Expected terminalMode to be pty or pipe",
-    );
-    assert(
-      typeof started.process?.ptyAvailable === "boolean",
-      "Expected ptyAvailable boolean in start response",
-    );
+    assert(started.process?.terminalMode === "pipe", "Expected terminalMode to be pipe");
+    assert(started.process?.ptyAvailable === false, "Expected ptyAvailable=false in start response");
     assert(
       started.process?.status === "starting" || started.process?.status === "ready",
       "Expected status in start response",
@@ -280,10 +274,7 @@ async function main() {
     assert(Array.isArray(service.warnings), "Expected warnings array in /api/state");
     assert(service.status === "ready", "Expected ready status in /api/state");
     assert(service.ready === true, "Expected ready=true in /api/state");
-    assert(
-      service.terminalMode === "pty" || service.terminalMode === "pipe",
-      "Expected terminalMode in /api/state",
-    );
+    assert(service.terminalMode === "pipe", "Expected terminalMode=pipe in /api/state");
 
     const history = await requestJson(
       `${baseUrl}/api/history?projectPath=${encodeURIComponent(tempProjectRoot)}`,
@@ -302,6 +293,16 @@ async function main() {
     assert(logs.serviceName === started.process.serviceName, "Expected serviceName in /api/logs");
     assert(typeof logs.output === "string", "Expected output string in /api/logs");
     assert(logs.output.includes("$ npm run dev"), "Expected command marker in /api/logs output");
+
+    const logsByLines = await requestJson(
+      `${baseUrl}/api/logs?projectPath=${encodeURIComponent(tempProjectRoot)}&lines=500`,
+    );
+    assert(logsByLines.lines === 500, "Expected lines=500 echo in /api/logs response");
+    assert(typeof logsByLines.output === "string", "Expected output string for line-based /api/logs");
+    assert(
+      logsByLines.output.includes("$ npm run dev"),
+      "Expected command marker in line-based /api/logs output",
+    );
 
     const wsBaseUrl = baseUrl.replace(/^http/, "ws");
     const clientLogWsUrl =

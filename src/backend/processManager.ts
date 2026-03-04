@@ -3,7 +3,6 @@ import path from "path";
 import { randomUUID } from "crypto";
 import net from "net";
 import { spawn as spawnChild } from "child_process";
-import { spawn as spawnPty } from "node-pty";
 import type { WebSocket } from "ws";
 import type {
   ClientLogEntry,
@@ -22,12 +21,12 @@ type ProcessRunner = {
   kill: () => void;
   onData: (listener: (data: string) => void) => void;
   onExit: (listener: (exitCode: number) => void) => void;
-  mode: "pty" | "pipe";
+  mode: "pipe";
   pid?: number;
 };
 
 type RuntimeMetadata = {
-  terminalMode: "pty" | "pipe";
+  terminalMode: "pipe";
   ptyAvailable: boolean;
   warnings: string[];
   effectiveUrl?: string;
@@ -42,7 +41,7 @@ type RunInfo = {
   status: ServiceStatus;
   ready: boolean;
   startedAt?: string;
-  terminalMode?: "pty" | "pipe";
+  terminalMode?: "pipe";
   ptyAvailable?: boolean;
   warnings: string[];
   effectiveUrl?: string;
@@ -193,7 +192,7 @@ function parseWarningLines(chunk: string) {
       continue;
     }
     if (
-      /(EADDRINUSE|address already in use|port\s+\d+.*(in use|already)|trying\s+\d+|pty unavailable)/i.test(
+      /(EADDRINUSE|address already in use|port\s+\d+.*(in use|already)|trying\s+\d+)/i.test(
         trimmed,
       )
     ) {
@@ -449,60 +448,6 @@ function writeOwnedRunsFile(runs: OwnedRunRecord[]) {
       2,
     ),
   );
-}
-
-function createPtyRunner(
-  shell: string,
-  command: string,
-  cwd: string,
-  projectId: string,
-  serviceName: string,
-  runId: string,
-  devrunPort: number,
-  configuredPort?: number,
-): ProcessRunner {
-  const pty = spawnPty(shell, ["-lc", command], {
-    name: "xterm-color",
-    cols: 120,
-    rows: 32,
-    cwd,
-    env: buildChildEnv(projectId, serviceName, runId, devrunPort, configuredPort),
-  });
-
-  return {
-    write(input) {
-      pty.write(input);
-    },
-    resize(cols, rows) {
-      pty.resize(Math.max(20, cols), Math.max(8, rows));
-    },
-    interrupt() {
-      if (!signalPidOrGroup(pty.pid, "SIGINT")) {
-        try {
-          pty.kill("SIGINT");
-        } catch {
-          pty.write("\u0003");
-        }
-      }
-    },
-    kill() {
-      if (!signalPidOrGroup(pty.pid, "SIGKILL")) {
-        try {
-          pty.kill("SIGKILL");
-        } catch {
-          pty.kill();
-        }
-      }
-    },
-    onData(listener) {
-      pty.onData(listener);
-    },
-    onExit(listener) {
-      pty.onExit(({ exitCode }) => listener(exitCode));
-    },
-    mode: "pty",
-    pid: pty.pid,
-  };
 }
 
 function createPipeRunner(
@@ -920,36 +865,16 @@ export class ProcessManager {
     const runId = randomUUID();
     const startedAt = new Date().toISOString();
 
-    let runner: ProcessRunner;
-    let modeNotice = "";
-    let ptyWarning = "";
-    try {
-      runner = createPtyRunner(
-        shell,
-        service.cmd,
-        cwd,
-        project.id,
-        service.name,
-        runId,
-        this.devrunPort,
-        service.port,
-      );
-    } catch (error) {
-      runner = createPipeRunner(
-        shell,
-        service.cmd,
-        cwd,
-        project.id,
-        service.name,
-        runId,
-        this.devrunPort,
-        service.port,
-      );
-      const reason =
-        error instanceof Error ? error.message : "Failed to initialize PTY";
-      ptyWarning = `PTY unavailable, using pipe mode: ${reason}`;
-      modeNotice = marker(`[${ptyWarning}]`);
-    }
+    const runner = createPipeRunner(
+      shell,
+      service.cmd,
+      cwd,
+      project.id,
+      service.name,
+      runId,
+      this.devrunPort,
+      service.port,
+    );
     const session: Session = {
       key,
       projectId: project.id,
@@ -957,16 +882,16 @@ export class ProcessManager {
       runId,
       runner,
       startedAt,
-      logBuffer: `${marker(`[run ${runId}]`, startedAt)}${marker(`$ ${service.cmd}`, startedAt)}${modeNotice}`,
+      logBuffer: `${marker(`[run ${runId}]`, startedAt)}${marker(`$ ${service.cmd}`, startedAt)}`,
       clients: new Set<WebSocket>(),
       inputBuffer: "",
       runtime: {
         terminalMode: runner.mode,
-        ptyAvailable: runner.mode === "pty",
-        warnings: ptyWarning ? [ptyWarning] : [],
+        ptyAvailable: false,
+        warnings: [],
         readyHintSeen: false,
       },
-      warningKeys: new Set<string>(ptyWarning ? [ptyWarning.toLowerCase()] : []),
+      warningKeys: new Set<string>(),
       detectedUrls: [],
       stopRequested: false,
     };
@@ -992,7 +917,7 @@ export class ProcessManager {
         cwd: service.cwd || ".",
         ...(typeof service.port === "number" ? { port: service.port } : {}),
         mode: runner.mode,
-        ptyAvailable: runner.mode === "pty",
+        ptyAvailable: false,
       },
     });
 
@@ -1320,13 +1245,46 @@ export class ProcessManager {
       return "";
     }
 
+    const buffer = this.getLogBuffer(projectId, serviceName, expectedRunId);
+    if (!buffer) {
+      return "";
+    }
+
+    return buffer.slice(-chars);
+  }
+
+  getLogTailLines(
+    projectId: string,
+    serviceName: string,
+    lines = 100,
+    expectedRunId?: string,
+  ) {
+    if (lines <= 0) {
+      return "";
+    }
+
+    const buffer = this.getLogBuffer(projectId, serviceName, expectedRunId);
+    if (!buffer) {
+      return "";
+    }
+
+    // Keep line endings intact while taking the newest N lines.
+    const chunks = buffer.match(/[^\n]*\n|[^\n]+/g) || [];
+    return chunks.slice(-lines).join("");
+  }
+
+  private getLogBuffer(
+    projectId: string,
+    serviceName: string,
+    expectedRunId?: string,
+  ) {
     const key = makeKey(projectId, serviceName);
     const session = this.sessions.get(key);
     if (session) {
       if (expectedRunId && expectedRunId !== session.runId) {
         return "";
       }
-      return session.logBuffer.slice(-chars);
+      return session.logBuffer;
     }
 
     const recent = this.recentLogs.get(key);
@@ -1337,6 +1295,6 @@ export class ProcessManager {
       return "";
     }
 
-    return recent.logBuffer.slice(-chars);
+    return recent.logBuffer;
   }
 }

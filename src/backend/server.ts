@@ -567,7 +567,7 @@ app.get("/api/capabilities", (_req, res) => {
     name: "devrun-ui",
     now: new Date().toISOString(),
     description:
-      "Host-native multi-project service runner with PTY terminals and poll-friendly history/log APIs.",
+      "Host-native multi-project service runner with browser terminal streaming and poll-friendly history/log APIs.",
     endpoints: {
       state: {
         method: "GET",
@@ -598,6 +598,7 @@ app.get("/api/capabilities", (_req, res) => {
           cwd: "optional string alias for projectPath",
           serviceName: "optional string (defaults to project.defaultService)",
           chars: "optional integer, default 4000",
+          lines: "optional integer, max 500 (takes precedence over chars when provided)",
           runId: "optional string",
         },
         description:
@@ -907,6 +908,20 @@ app.get("/api/logs", (req, res) => {
 
   const charsRaw =
     typeof req.query.chars === "string" ? Number(req.query.chars) : 4000;
+  const linesProvided = typeof req.query.lines === "string" && req.query.lines.trim().length > 0;
+  let lines: number | null = null;
+  if (linesProvided) {
+    const linesResult = parseIntegerQuery(req.query.lines, {
+      name: "lines",
+      defaultValue: 100,
+      min: 1,
+      max: 500,
+    });
+    if (!linesResult.ok) {
+      return res.status(400).json(linesResult);
+    }
+    lines = linesResult.value;
+  }
   const runId = typeof req.query.runId === "string" ? req.query.runId.trim() : "";
   const chars = Number.isFinite(charsRaw) ? Math.min(Math.max(charsRaw, 200), 50_000) : 4000;
   const runInfo = processes.getRunInfo(
@@ -919,6 +934,7 @@ app.get("/api/logs", (req, res) => {
     serviceName: resolvedService.service.name,
     usedDefaultService: resolvedService.usedDefaultService,
     chars,
+    lines,
     status: runInfo.status,
     ready: runInfo.ready,
     runId: runInfo.runId || runInfo.lastRunId || null,
@@ -938,12 +954,20 @@ app.get("/api/logs", (req, res) => {
       typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
     exitWasRestartReplace: Boolean(runInfo.exitWasRestartReplace),
     exitWasStopRequest: Boolean(runInfo.exitWasStopRequest),
-    output: processes.getLogTail(
-      projectResult.project.id,
-      resolvedService.service.name,
-      chars,
-      runId || undefined,
-    ),
+    output:
+      typeof lines === "number"
+        ? processes.getLogTailLines(
+            projectResult.project.id,
+            resolvedService.service.name,
+            lines,
+            runId || undefined,
+          )
+        : processes.getLogTail(
+            projectResult.project.id,
+            resolvedService.service.name,
+            chars,
+            runId || undefined,
+          ),
   });
 });
 

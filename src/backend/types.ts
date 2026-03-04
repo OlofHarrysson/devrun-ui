@@ -18,7 +18,7 @@ export type ProjectConfig = {
   services: ProjectService[];
 };
 
-export type TerminalMode = "pty" | "pipe";
+export type TerminalMode = "pipe";
 export type ServiceStatus = "starting" | "ready" | "stopped" | "error";
 
 export type ServiceRuntimeState = {

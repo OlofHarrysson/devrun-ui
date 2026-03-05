@@ -1,21 +1,68 @@
 # devrun-ui
 
-Local GUI to run long-lived dev services per project, with browser terminals backed by stdout/stderr pipes.
+Devrun is a local control center for running and observing multiple dev projects from one place.
+
+It gives both humans and AI agents the same shared runtime surface:
+- register project roots
+- configure named services per project
+- start, stop, and restart those services
+- inspect lifecycle history and terminal logs
+- open the verified app URL for a running web service
 
 ## Product direction
 
 - Vision brief: [`docs/VISION.md`](docs/VISION.md)
+- First-time usage guide: [`docs/USER-GUIDE.md`](docs/USER-GUIDE.md)
 
-## What it does
-- Add multiple projects by path.
-- Store per-project service config (including `defaultService`) in Devrun (no per-repo YAML required).
-- Optional per-service `port` can be configured explicitly.
-- Start/stop/restart services from a top command bar.
-- Auto-open terminal tabs per service (live if running, read-only recent logs if stopped).
-- Service tabs are project-scoped: select a project first, then switch between that project's services.
-- Compact history panel shows recent per-service lifecycle/command events alongside the terminal.
-- Exposes API endpoints for AI tooling (`/api/capabilities`, `/api/state`, `/api/history`, `/api/logs`, `/api/snapshot`, process control).
-- `state`, `history`, and `logs` expose structured runtime metadata (`status`, `ready`, `terminalMode`, `ptyAvailable`, `warnings`, `effectiveUrl`, `port`).
+## Docs Map
+
+- `README.md`: product overview, setup, runtime model, API contract
+- `docs/USER-GUIDE.md`: first-time user walkthrough and UI flow
+- `docs/ARCHITECTURE.md`: code-level architecture and runtime flow
+- `docs/VISION.md`: stable product direction
+- `AGENTS.md`: contributor conventions and docs index
+
+## What Devrun Does
+
+- Registers multiple local projects by path
+- Stores per-project service config inside Devrun instead of per-repo YAML
+- Starts, stops, and restarts named services from one UI
+- Opens one terminal tab per service and reuses recent logs for stopped services
+- Keeps a low-noise lifecycle history alongside verbose terminal output
+- Exposes state/history/log/process APIs for AI tooling
+- Publishes structured runtime metadata such as `status`, `ready`, `warnings`, `port`, and `effectiveUrl`
+
+## Core Concepts
+
+### Project
+
+A project is a repo root known to Devrun.
+
+### Service
+
+A service is a named shell command inside that project, with optional `cwd` and optional explicit `port`.
+
+### Default Service
+
+The default service is the service Devrun uses when an API call omits `serviceName`.
+
+### History vs Logs
+
+- `history` is the low-noise lifecycle timeline
+- `logs` is the verbose terminal output
+
+### Port
+
+Devrun injects `PORT=<port>` before launch.
+
+- Explicit ports are strict.
+- Services without an explicit `port` get a stable Devrun-managed reserved port.
+
+### Effective URL
+
+If a service exposes a local web URL, Devrun returns it as `effectiveUrl`.
+
+Use that value instead of guessing `http://localhost:<port>`.
 
 ## Quick start
 
@@ -34,6 +81,22 @@ npm run dev
 3. Open app:
 
 [http://localhost:4317](http://localhost:4317)
+
+## First-Time UI Flow
+
+1. Click `Add Project` and enter the repo root path.
+2. Select the project and click `Configure`.
+3. Define one or more services:
+   - `name`
+   - `cmd`
+   - optional `cwd`
+   - optional `port`
+4. Pick a `defaultService`.
+5. Click `Start` on the service you want to run.
+6. Use `Open app` when Devrun surfaces a verified `effectiveUrl`.
+7. Use the terminal and history panels to understand what happened.
+
+Devrun may auto-seed one `web` service from `package.json` (`npm run dev` or `npm run start`) for fast first-run setup, but you should use `Configure` when the inferred service is wrong or incomplete.
 
 ## UI stack
 
@@ -58,10 +121,11 @@ npm run dev
 - On project add/startup, Devrun tries to auto-seed one `web` service from `package.json`:
   - `npm run dev` if a `dev` script exists
   - otherwise `npm run start` if a `start` script exists
-- You can override via the **Configure** button in the UI.
+- You can override that seed via the `Configure` button in the UI or `POST /api/project-config`.
 - Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
-- If a service has configured `port`, Devrun injects `PORT=<port>` before launch.
-- Configured ports are strict: if the port is already taken, start/restart returns `409` instead of silently rolling to another port.
+- Devrun injects `PORT=<port>` before launch. If no explicit `port` is configured, it auto-assigns and reserves a stable port per service.
+- Explicit ports are strict: if the chosen port is already taken or already reserved by another Devrun service, start/restart returns `409`.
+- Auto-assigned ports stay sticky across stop/start cycles so one stopped service does not silently lose its port to another Devrun-managed service.
 - Devrun persists owned child runs and performs an orphan cleanup sweep on startup.
 - You can trigger manual cleanup via `POST /api/process/cleanup-orphans` if runtime state becomes desynced.
 - Devrun injects `NODE_OPTIONS=--localstorage-file=<...>` when missing, with files stored under `.devrun/runtime/localstorage/` so transient localStorage artifacts stay out of managed project repos.
@@ -135,6 +199,7 @@ Notes:
 - Running services now expose a `runId` in `GET /api/state` and `/api/snapshot`.
 - Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
 - Runtime snapshots expose `status` (`starting|ready|stopped|error`) and `ready` to avoid log-scraping for readiness.
+- `effectiveUrl` is the verified local app URL when Devrun can confirm one; prefer it over reconstructing a URL manually.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
 - `GET /api/logs` supports `chars` (200-50,000) and `lines` (1-500); when `lines` is provided it takes precedence over `chars`.
 - Runtime metadata is currently pipe-only (`terminalMode="pipe"`, `ptyAvailable=false`).
@@ -249,3 +314,4 @@ npm run test:all
 - This is localhost tooling, no auth layer in MVP.
 - Project registry is stored at `.devrun/projects.json`.
 - Project service config is stored at `.devrun/project-configs.json`.
+- For normal operation, prefer `POST /api/project-config` over editing `.devrun` files directly.

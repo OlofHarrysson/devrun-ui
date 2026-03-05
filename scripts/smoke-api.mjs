@@ -52,6 +52,28 @@ async function pickFreePort() {
   });
 }
 
+function writeDevPackage(projectRoot, name = "devrun-smoke-app") {
+  const packageJsonPath = path.join(projectRoot, "package.json");
+  fs.writeFileSync(
+    packageJsonPath,
+    JSON.stringify(
+      {
+        name,
+        private: true,
+        scripts: {
+          dev:
+            "node -e \"const http=require('http'); const port=Number(process.env.PORT||4567); " +
+            "const server=http.createServer((_req,res)=>{res.writeHead(200, {'content-type':'text/plain'}); res.end('ok');}); " +
+            "server.listen(port, '0.0.0.0', ()=>console.log('Local: http://localhost:'+port)); " +
+            "setInterval(() => console.log('tick'), 250);\"",
+        },
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function requestJson(url, init) {
   const response = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -179,6 +201,7 @@ async function main() {
   const logsRef = { value: "" };
   let serverProcess;
   let tempProjectRoot = "";
+  let tempProjectRootB = "";
   let createdProjectId = "";
 
   try {
@@ -205,21 +228,7 @@ async function main() {
     await waitForServerReady(baseUrl, logsRef);
 
     tempProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "devrun-smoke-"));
-    const packageJsonPath = path.join(tempProjectRoot, "package.json");
-    fs.writeFileSync(
-      packageJsonPath,
-      JSON.stringify(
-        {
-          name: "devrun-smoke-app",
-          private: true,
-          scripts: {
-            dev: "node -e \"const port=process.env.PORT||4567; console.log('Local: http://localhost:'+port); setInterval(() => console.log('tick'), 250);\"",
-          },
-        },
-        null,
-        2,
-      ),
-    );
+    writeDevPackage(tempProjectRoot);
 
     const started = await requestJson(`${baseUrl}/api/process/start`, {
       method: "POST",
@@ -259,7 +268,10 @@ async function main() {
       baseUrl,
       tempProjectRoot,
       (_project, candidateService) =>
-        candidateService.running === true && candidateService.ready === true,
+        candidateService.running === true &&
+        candidateService.ready === true &&
+        typeof candidateService.port === "number" &&
+        typeof candidateService.effectiveUrl === "string",
     );
 
     assert(
@@ -275,6 +287,16 @@ async function main() {
     assert(service.status === "ready", "Expected ready status in /api/state");
     assert(service.ready === true, "Expected ready=true in /api/state");
     assert(service.terminalMode === "pipe", "Expected terminalMode=pipe in /api/state");
+    assert(typeof service.port === "number", "Expected auto-assigned port in /api/state");
+    assert(
+      typeof service.effectiveUrl === "string",
+      "Expected verified effectiveUrl in /api/state",
+    );
+    assert(
+      !service.effectiveUrl.includes("localhost"),
+      "Expected effectiveUrl to use a numeric loopback host",
+    );
+    const autoAssignedPortA = service.port;
 
     const history = await requestJson(
       `${baseUrl}/api/history?projectPath=${encodeURIComponent(tempProjectRoot)}`,
@@ -380,6 +402,78 @@ async function main() {
         candidateService.running === false && candidateService.status === "stopped",
     );
 
+    tempProjectRootB = fs.mkdtempSync(path.join(os.tmpdir(), "devrun-smoke-b-"));
+    writeDevPackage(tempProjectRootB, "devrun-smoke-app-b");
+
+    const startedB = await requestJson(`${baseUrl}/api/process/start`, {
+      method: "POST",
+      body: JSON.stringify({ projectPath: tempProjectRootB }),
+    });
+    assert(startedB.ok === true, "Expected second auto-assigned service to start");
+
+    const { service: serviceB } = await waitForProjectService(
+      baseUrl,
+      tempProjectRootB,
+      (_project, candidateService) =>
+        candidateService.running === true &&
+        candidateService.ready === true &&
+        typeof candidateService.port === "number" &&
+        typeof candidateService.effectiveUrl === "string",
+    );
+    assert(
+      typeof serviceB.port === "number" && serviceB.port !== autoAssignedPortA,
+      "Expected second auto-assigned service to get a different reserved port",
+    );
+    assert(
+      typeof serviceB.effectiveUrl === "string" && !serviceB.effectiveUrl.includes("localhost"),
+      "Expected second service effectiveUrl to use a numeric loopback host",
+    );
+
+    await requestJson(`${baseUrl}/api/process/start`, {
+      method: "POST",
+      body: JSON.stringify({ projectPath: tempProjectRoot }),
+    });
+    const { service: serviceAAfterRestart } = await waitForProjectService(
+      baseUrl,
+      tempProjectRoot,
+      (_project, candidateService) =>
+        candidateService.running === true &&
+        candidateService.ready === true &&
+        candidateService.port === autoAssignedPortA &&
+        typeof candidateService.effectiveUrl === "string",
+    );
+    assert(
+      serviceAAfterRestart.port === autoAssignedPortA,
+      "Expected first service to keep its reserved auto-assigned port after restart",
+    );
+    assert(
+      typeof serviceAAfterRestart.effectiveUrl === "string" &&
+        !serviceAAfterRestart.effectiveUrl.includes("localhost"),
+      "Expected restarted service effectiveUrl to use a numeric loopback host",
+    );
+
+    await requestJson(`${baseUrl}/api/process/stop`, {
+      method: "POST",
+      body: JSON.stringify({ projectPath: tempProjectRoot }),
+    });
+    await waitForProjectService(
+      baseUrl,
+      tempProjectRoot,
+      (_project, candidateService) =>
+        candidateService.running === false && candidateService.status === "stopped",
+    );
+
+    await requestJson(`${baseUrl}/api/process/stop`, {
+      method: "POST",
+      body: JSON.stringify({ projectPath: tempProjectRootB }),
+    });
+    await waitForProjectService(
+      baseUrl,
+      tempProjectRootB,
+      (_project, candidateService) =>
+        candidateService.running === false && candidateService.status === "stopped",
+    );
+
     const configuredPort = await pickFreePort();
     await requestJson(`${baseUrl}/api/project-config`, {
       method: "POST",
@@ -464,6 +558,61 @@ async function main() {
       });
     }
 
+    const ipv6ConflictPort = await pickFreePort();
+    const ipv6Occupied = net.createServer();
+    ipv6Occupied.unref();
+    let ipv6Supported = true;
+    try {
+      await new Promise((resolve, reject) => {
+        ipv6Occupied.once("error", reject);
+        ipv6Occupied.listen(ipv6ConflictPort, "::1", () => resolve(undefined));
+      });
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : "";
+      if (code === "EADDRNOTAVAIL" || code === "EAFNOSUPPORT") {
+        ipv6Supported = false;
+      } else {
+        throw error;
+      }
+    }
+    if (ipv6Supported) {
+      try {
+        await requestJson(`${baseUrl}/api/project-config`, {
+          method: "POST",
+          body: JSON.stringify({
+            projectId: createdProjectId,
+            services: [
+              {
+                name: service.name,
+                cmd: "npm run dev",
+                port: ipv6ConflictPort,
+              },
+            ],
+          }),
+        });
+
+        const conflictStartIpv6 = await requestWithStatus(`${baseUrl}/api/process/start`, {
+          method: "POST",
+          body: JSON.stringify({ projectPath: tempProjectRoot }),
+        });
+        assert(
+          conflictStartIpv6.status === 409,
+          "Expected 409 when configured port is already in use on ::1",
+        );
+        assert(
+          typeof conflictStartIpv6.body?.error === "string" &&
+            conflictStartIpv6.body.error.toLowerCase().includes("configured port"),
+          "Expected configured port conflict message for ::1 listener",
+        );
+      } finally {
+        await new Promise((resolve) => {
+          ipv6Occupied.close(() => {
+            resolve(undefined);
+          });
+        });
+      }
+    }
+
     const cleanup = await requestJson(`${baseUrl}/api/process/cleanup-orphans`, {
       method: "POST",
     });
@@ -489,6 +638,21 @@ async function main() {
         );
       }
     }
+    const createdProjectB = Array.isArray(state.projects)
+      ? state.projects.find((entry) => entry.root === tempProjectRootB)
+      : null;
+    if (createdProjectB?.id) {
+      const response = await fetch(
+        `${baseUrl}/api/projects/${encodeURIComponent(createdProjectB.id)}`,
+        { method: "DELETE" },
+      );
+      if (response.status !== 204) {
+        const text = await response.text();
+        throw new Error(
+          `Failed to cleanup second smoke project (${response.status}): ${text || "no body"}`,
+        );
+      }
+    }
 
     console.log(`[smoke:api] PASS (${baseUrl})`);
   } catch (error) {
@@ -504,6 +668,13 @@ async function main() {
     if (tempProjectRoot) {
       try {
         fs.rmSync(tempProjectRoot, { recursive: true, force: true });
+      } catch {
+        // no-op
+      }
+    }
+    if (tempProjectRootB) {
+      try {
+        fs.rmSync(tempProjectRootB, { recursive: true, force: true });
       } catch {
         // no-op
       }

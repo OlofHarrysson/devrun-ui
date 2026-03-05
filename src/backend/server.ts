@@ -651,7 +651,8 @@ app.get("/api/capabilities", (_req, res) => {
       "Poll GET /api/history?projectPath=...&afterSeq=<nextAfterSeq> for incremental events.",
       "Use status/ready fields to detect starting vs ready vs error without log scraping.",
       "Call POST /api/process/cleanup-orphans if runtime state looks desynced after crashes/restarts.",
-      "Configured service ports are strict; start/restart returns HTTP 409 when the port is in use.",
+      "Configured service ports are strict; start/restart returns HTTP 409 when the explicit port is occupied or already reserved by another Devrun service.",
+      "Prefer returned effectiveUrl for managed apps instead of constructing localhost URLs manually.",
       "Use GET /api/logs with runId for verbose output when needed.",
       "Use WS /ws/client-logs to forward browser-side logs into terminal/history for the active run.",
     ],
@@ -698,6 +699,7 @@ app.post("/api/project-config", (req, res) => {
 
   try {
     writeProjectConfig(projectId, { name, defaultService, services });
+    processes.syncPortReservations();
     return res.json({ project: buildProjectState(project) });
   } catch (error) {
     return res.status(400).json({
@@ -728,6 +730,7 @@ app.delete("/api/projects/:projectId", (req, res) => {
 
   removeProject(projectId);
   removeProjectConfig(projectId);
+  processes.syncPortReservations();
   processes.clearHistoryForProject(projectId);
   return res.status(204).send();
 });

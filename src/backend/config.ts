@@ -146,6 +146,20 @@ export function readProjectConfig(projectId: string): ProjectConfig {
   return sanitizeConfig(config);
 }
 
+export function readAllProjectConfigs(): Record<string, ProjectConfig> {
+  const file = readConfigFile();
+  const configs: Record<string, ProjectConfig> = {};
+  for (const [projectId, config] of Object.entries(file.projects)) {
+    try {
+      configs[projectId] = sanitizeConfig(config);
+    } catch {
+      // Ignore invalid entries during global scans so one bad project
+      // does not block port reservation bookkeeping for the rest.
+    }
+  }
+  return configs;
+}
+
 export function writeProjectConfig(projectId: string, config: Partial<ProjectConfig>) {
   const file = readConfigFile();
   file.projects[projectId] = sanitizeConfig(config);

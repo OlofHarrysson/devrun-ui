@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import http from "http";
+import https from "https";
 import net from "net";
 import { spawn as spawnChild } from "child_process";
 import type { WebSocket } from "ws";
@@ -11,6 +13,14 @@ import type {
   ServiceHistoryEventType,
   ServiceStatus,
 } from "./types";
+import {
+  deleteAssignedPort,
+  findReservedPortOwner,
+  getAssignedPort,
+  listReservedPorts,
+  prunePortAssignments,
+  setAssignedPort,
+} from "./portReservations";
 import { ServiceHistoryStore } from "./historyStore";
 import { DEVRUN_HOME } from "./storage";
 
@@ -56,6 +66,7 @@ type Session = {
   projectId: string;
   serviceName: string;
   runId: string;
+  launchPort?: number;
   runner: ProcessRunner;
   startedAt: string;
   logBuffer: string;
@@ -65,6 +76,7 @@ type Session = {
   warningKeys: Set<string>;
   detectedUrls: string[];
   stopRequested: boolean;
+  urlProbeInFlight: boolean;
 };
 
 type RecentLog = {
@@ -113,6 +125,13 @@ const STOP_ALL_POLL_MS = 50;
 const ORPHAN_TERM_TIMEOUT_MS = 1600;
 const ORPHAN_KILL_TIMEOUT_MS = 1200;
 const PROCESS_EXIT_POLL_MS = 120;
+const AUTO_PORT_START = 3000;
+const AUTO_PORT_END = 9999;
+const LOCAL_URL_PROBE_TIMEOUT_MS = 1000;
+const LOCAL_URL_PROBE_RETRIES = 8;
+const LOCAL_URL_PROBE_RETRY_MS = 400;
+const LOOPBACK_PORT_HOSTS = ["127.0.0.1", "::1"] as const;
+const LOCAL_URL_FALLBACK_HOSTS = ["127.0.0.1", "::1"] as const;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => {
@@ -137,9 +156,6 @@ function normalizeUrl(raw: string) {
     const parsed = new URL(trimPunctuation(raw));
     if (!/^https?:$/.test(parsed.protocol)) {
       return "";
-    }
-    if (parsed.hostname === "0.0.0.0" || parsed.hostname === "::") {
-      parsed.hostname = "localhost";
     }
     return parsed.toString();
   } catch {
@@ -167,6 +183,8 @@ function isLocalHostUrl(url: string) {
     const parsed = new URL(url);
     return (
       parsed.hostname === "localhost" ||
+      parsed.hostname === "0.0.0.0" ||
+      parsed.hostname === "::" ||
       parsed.hostname === "127.0.0.1" ||
       parsed.hostname === "::1"
     );
@@ -181,6 +199,55 @@ function chooseEffectiveUrl(urls: string[]) {
   }
   const latestLocal = [...urls].reverse().find((url) => isLocalHostUrl(url));
   return latestLocal || urls[urls.length - 1];
+}
+
+function formatLocalUrl(protocol: string, host: string, port: number, pathName = "/") {
+  const normalizedPath = pathName.startsWith("/") ? pathName : `/${pathName}`;
+  const hostLabel = host.includes(":") ? `[${host}]` : host;
+  return `${protocol}//${hostLabel}:${port}${normalizedPath}`;
+}
+
+function buildLocalUrlProbeCandidates(session: Session) {
+  if (typeof session.launchPort !== "number") {
+    return [];
+  }
+
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (url: string) => {
+    if (!url || seen.has(url)) {
+      return;
+    }
+    seen.add(url);
+    candidates.push(url);
+  };
+
+  for (const detectedUrl of session.detectedUrls) {
+    try {
+      const parsed = new URL(detectedUrl);
+      if (!/^https?:$/.test(parsed.protocol) || !isLocalHostUrl(detectedUrl)) {
+        continue;
+      }
+      const pathName = `${parsed.pathname || "/"}${parsed.search || ""}`;
+      if (parsed.hostname === "127.0.0.1" || parsed.hostname === "::1") {
+        addCandidate(formatLocalUrl(parsed.protocol, parsed.hostname, session.launchPort, pathName));
+        continue;
+      }
+      for (const host of LOCAL_URL_FALLBACK_HOSTS) {
+        addCandidate(formatLocalUrl(parsed.protocol, host, session.launchPort, pathName));
+      }
+    } catch {
+      // Ignore malformed URL candidates from logs.
+    }
+  }
+
+  if (!candidates.length) {
+    for (const host of LOCAL_URL_FALLBACK_HOSTS) {
+      addCandidate(formatLocalUrl("http:", host, session.launchPort));
+    }
+  }
+
+  return candidates;
 }
 
 function parseWarningLines(chunk: string) {
@@ -264,36 +331,59 @@ function buildChildEnv(
 export class PortUnavailableError extends Error {
   port: number;
 
-  constructor(port: number) {
-    super(`Configured port ${port} is already in use.`);
+  constructor(port: number, message = `Configured port ${port} is already in use.`) {
+    super(message);
     this.name = "PortUnavailableError";
     this.port = port;
   }
 }
 
-async function isPortAvailable(port: number): Promise<boolean> {
+type HostPortProbeResult = "available" | "occupied" | "unsupported";
+
+async function probePortAvailabilityOnHost(
+  port: number,
+  host: (typeof LOOPBACK_PORT_HOSTS)[number],
+): Promise<HostPortProbeResult> {
   return new Promise((resolve, reject) => {
     const probe = net.createServer();
     probe.unref();
 
     probe.once("error", (error: NodeJS.ErrnoException) => {
       if (error.code === "EADDRINUSE" || error.code === "EACCES") {
-        resolve(false);
+        resolve("occupied");
+        return;
+      }
+      if (error.code === "EADDRNOTAVAIL" || error.code === "EAFNOSUPPORT") {
+        resolve("unsupported");
         return;
       }
       reject(error);
     });
 
-    probe.listen({ host: "127.0.0.1", port }, () => {
+    probe.listen(
+      {
+        host,
+        port,
+        ...(host === "::1" ? { ipv6Only: true } : {}),
+      },
+      () => {
       probe.close((closeError) => {
         if (closeError) {
           reject(closeError);
           return;
         }
-        resolve(true);
+        resolve("available");
       });
-    });
+      },
+    );
   });
+}
+
+async function isPortAvailable(port: number): Promise<boolean> {
+  const results = await Promise.all(
+    LOOPBACK_PORT_HOSTS.map((host) => probePortAvailabilityOnHost(port, host)),
+  );
+  return !results.includes("occupied");
 }
 
 async function ensurePortIsAvailable(port: number) {
@@ -323,6 +413,54 @@ async function waitForPortRelease(port: number, timeoutMs = RESTART_PORT_RELEASE
     await sleep(PORT_RELEASE_POLL_MS);
   }
   throw new PortUnavailableError(port);
+}
+
+async function probeHttpUrl(url: string, timeoutMs = LOCAL_URL_PROBE_TIMEOUT_MS) {
+  let settled = false;
+  return new Promise<boolean>((resolve) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      resolve(false);
+      return;
+    }
+
+    const requestFn = parsed.protocol === "https:" ? https.request : http.request;
+    const request = requestFn(
+      parsed,
+      {
+        method: "GET",
+      },
+      (response) => {
+        response.resume();
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve(true);
+      },
+    );
+
+    request.once("error", () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(false);
+    });
+
+    request.setTimeout(timeoutMs, () => {
+      request.destroy();
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(false);
+    });
+
+    request.end();
+  });
 }
 
 function signalPidOrGroup(pid: number | undefined, signal: NodeJS.Signals): boolean {
@@ -516,6 +654,7 @@ export class ProcessManager {
   private replacedRunIds = new Set<string>();
   private history = new ServiceHistoryStore({ retention: HISTORY_RETENTION });
   private readonly devrunPort: number;
+  private portReservationChain: Promise<void> = Promise.resolve();
 
   constructor(options?: { devrunPort?: number }) {
     const configuredPort = options?.devrunPort;
@@ -523,6 +662,7 @@ export class ProcessManager {
       typeof configuredPort === "number" && Number.isInteger(configuredPort) && configuredPort > 0
         ? configuredPort
         : 4317;
+    prunePortAssignments();
   }
 
   isRunning(projectId: string, serviceName: string) {
@@ -558,6 +698,143 @@ export class ProcessManager {
 
   clearHistoryForProject(projectId: string) {
     this.history.clearProject(projectId);
+  }
+
+  syncPortReservations() {
+    prunePortAssignments();
+  }
+
+  private async withPortReservationLock<T>(work: () => Promise<T>) {
+    const previous = this.portReservationChain;
+    let release: (() => void) | undefined;
+    this.portReservationChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release?.();
+    }
+  }
+
+  private appendWarning(session: Session, warning: string) {
+    const normalized = warning.trim();
+    if (!normalized) {
+      return;
+    }
+    const key = normalized.toLowerCase();
+    if (session.warningKeys.has(key)) {
+      return;
+    }
+    session.warningKeys.add(key);
+    session.runtime.warnings.push(normalized.slice(0, 260));
+    if (session.runtime.warnings.length > 12) {
+      session.runtime.warnings = session.runtime.warnings.slice(-12);
+    }
+  }
+
+  private async findAvailableAutoPort(projectId: string, serviceName: string) {
+    const reservedByOthers = new Set<number>();
+    for (const owner of listReservedPorts()) {
+      if (owner.projectId === projectId && owner.serviceName === serviceName) {
+        continue;
+      }
+      reservedByOthers.add(owner.port);
+    }
+
+    for (let port = AUTO_PORT_START; port <= AUTO_PORT_END; port += 1) {
+      if (reservedByOthers.has(port)) {
+        continue;
+      }
+      if (await isPortAvailable(port)) {
+        return port;
+      }
+    }
+
+    throw new Error(
+      `No free auto-assigned ports available in range ${AUTO_PORT_START}-${AUTO_PORT_END}.`,
+    );
+  }
+
+  private async resolveLaunchPort(project: RegistryEntry, service: ProjectService) {
+    prunePortAssignments();
+
+    if (typeof service.port === "number") {
+      deleteAssignedPort(project.id, service.name);
+      const owner = findReservedPortOwner(service.port, {
+        projectId: project.id,
+        serviceName: service.name,
+      });
+      if (owner) {
+        throw new PortUnavailableError(
+          service.port,
+          `Configured port ${service.port} is already reserved by ${owner.projectId}/${owner.serviceName}.`,
+        );
+      }
+      await ensurePortIsAvailable(service.port);
+      return {
+        port: service.port,
+      };
+    }
+
+    const previousAssignedPort = getAssignedPort(project.id, service.name);
+    if (typeof previousAssignedPort === "number") {
+      const owner = findReservedPortOwner(previousAssignedPort, {
+        projectId: project.id,
+        serviceName: service.name,
+      });
+      if (!owner && (await isPortAvailable(previousAssignedPort))) {
+        return {
+          port: previousAssignedPort,
+        };
+      }
+    }
+
+    const nextPort = await this.findAvailableAutoPort(project.id, service.name);
+    setAssignedPort(project.id, service.name, nextPort);
+    return {
+      port: nextPort,
+      reassignedFrom:
+        typeof previousAssignedPort === "number" && previousAssignedPort !== nextPort
+          ? previousAssignedPort
+          : undefined,
+    };
+  }
+
+  private async verifyLocalEffectiveUrl(session: Session) {
+    if (session.urlProbeInFlight || session.runtime.effectiveUrl) {
+      return;
+    }
+    if (typeof session.launchPort !== "number") {
+      return;
+    }
+
+    session.urlProbeInFlight = true;
+    try {
+      for (let attempt = 0; attempt < LOCAL_URL_PROBE_RETRIES; attempt += 1) {
+        if (this.sessions.get(session.key) !== session) {
+          return;
+        }
+
+        const candidates = buildLocalUrlProbeCandidates(session);
+        for (const candidate of candidates) {
+          if (!(await probeHttpUrl(candidate))) {
+            continue;
+          }
+          if (this.sessions.get(session.key) !== session) {
+            return;
+          }
+          session.runtime.effectiveUrl = candidate;
+          session.runtime.port = session.launchPort;
+          return;
+        }
+
+        await sleep(LOCAL_URL_PROBE_RETRY_MS);
+      }
+    } finally {
+      session.urlProbeInFlight = false;
+    }
   }
 
   private broadcastOutput(session: Session, data: string) {
@@ -781,34 +1058,17 @@ export class ProcessManager {
       }
     }
 
-    const effectiveUrl = chooseEffectiveUrl(session.detectedUrls);
-    session.runtime.effectiveUrl = effectiveUrl;
-    if (effectiveUrl) {
-      try {
-        const parsed = new URL(effectiveUrl);
-        session.runtime.port = parsed.port ? Number(parsed.port) : undefined;
-      } catch {
-        session.runtime.port = undefined;
-      }
-    } else {
-      session.runtime.port = undefined;
-    }
-
-    if (!session.runtime.readyHintSeen && (Boolean(effectiveUrl) || hasReadySignal(chunk))) {
+    if (!session.runtime.readyHintSeen && (urls.length > 0 || hasReadySignal(chunk))) {
       session.runtime.readyHintSeen = true;
     }
 
     const warningLines = parseWarningLines(chunk);
     for (const warning of warningLines) {
-      const key = warning.toLowerCase();
-      if (session.warningKeys.has(key)) {
-        continue;
-      }
-      session.warningKeys.add(key);
-      session.runtime.warnings.push(warning);
-      if (session.runtime.warnings.length > 12) {
-        session.runtime.warnings = session.runtime.warnings.slice(-12);
-      }
+      this.appendWarning(session, warning);
+    }
+
+    if (typeof session.launchPort === "number") {
+      void this.verifyLocalEffectiveUrl(session);
     }
   }
 
@@ -847,148 +1107,160 @@ export class ProcessManager {
   }
 
   async start(project: RegistryEntry, service: ProjectService): Promise<Session> {
-    const key = makeKey(project.id, service.name);
-    const existing = this.sessions.get(key);
-    if (existing) {
-      return existing;
-    }
-    this.recentLogs.delete(key);
+    return this.withPortReservationLock(async () => {
+      const key = makeKey(project.id, service.name);
+      const existing = this.sessions.get(key);
+      if (existing) {
+        return existing;
+      }
+      this.recentLogs.delete(key);
 
-    if (typeof service.port === "number") {
-      await ensurePortIsAvailable(service.port);
-    }
+      const launch = await this.resolveLaunchPort(project, service);
+      const launchPort = launch.port;
+      const shell = process.env.SHELL || "/bin/zsh";
+      const cwd = service.cwd
+        ? path.resolve(project.root, service.cwd)
+        : project.root;
+      const runId = randomUUID();
+      const startedAt = new Date().toISOString();
 
-    const shell = process.env.SHELL || "/bin/zsh";
-    const cwd = service.cwd
-      ? path.resolve(project.root, service.cwd)
-      : project.root;
-    const runId = randomUUID();
-    const startedAt = new Date().toISOString();
-
-    const runner = createPipeRunner(
-      shell,
-      service.cmd,
-      cwd,
-      project.id,
-      service.name,
-      runId,
-      this.devrunPort,
-      service.port,
-    );
-    const session: Session = {
-      key,
-      projectId: project.id,
-      serviceName: service.name,
-      runId,
-      runner,
-      startedAt,
-      logBuffer: `${marker(`[run ${runId}]`, startedAt)}${marker(`$ ${service.cmd}`, startedAt)}`,
-      clients: new Set<WebSocket>(),
-      inputBuffer: "",
-      runtime: {
-        terminalMode: runner.mode,
-        ptyAvailable: false,
-        warnings: [],
-        readyHintSeen: false,
-      },
-      warningKeys: new Set<string>(),
-      detectedUrls: [],
-      stopRequested: false,
-    };
-
-    if (typeof runner.pid === "number" && Number.isInteger(runner.pid) && runner.pid > 0) {
-      this.saveOwnedRun({
+      const runner = createPipeRunner(
+        shell,
+        service.cmd,
+        cwd,
+        project.id,
+        service.name,
         runId,
+        this.devrunPort,
+        launchPort,
+      );
+      const session: Session = {
+        key,
         projectId: project.id,
         serviceName: service.name,
-        projectRoot: project.root,
-        cmd: service.cmd,
-        cwd,
+        runId,
+        launchPort,
+        runner,
         startedAt,
-        pid: runner.pid,
-        mode: runner.mode,
-      });
-    }
-
-    this.recordHistory(project.id, service.name, "start", {
-      runId,
-      data: {
-        cmd: service.cmd,
-        cwd: service.cwd || ".",
-        ...(typeof service.port === "number" ? { port: service.port } : {}),
-        mode: runner.mode,
-        ptyAvailable: false,
-      },
-    });
-
-    runner.onData((data) => {
-      this.appendLog(session, data);
-      this.updateRuntimeMetadata(session, data);
-      this.broadcastOutput(session, data);
-    });
-
-    runner.onExit((exitCode) => {
-      this.removeOwnedRun(session.runId);
-      const replacedByRestart = this.replacedRunIds.delete(session.runId);
-      const stopRequested = session.stopRequested;
-      const needsNewline = session.logBuffer && !session.logBuffer.endsWith("\n");
-      const msg = `${needsNewline ? "\n" : ""}${marker(`[process exited ${exitCode}]`)}`;
-      this.appendLog(session, msg);
-      this.recordHistory(session.projectId, session.serviceName, "exit", {
-        runId: session.runId,
-        data: {
-          exitCode,
-          ...(stopRequested ? { stopRequested: true } : {}),
-          ...(replacedByRestart ? { replacedByRestart: true } : {}),
-        },
-      });
-
-      for (const client of session.clients) {
-        if (client.readyState === client.OPEN) {
-          client.send(JSON.stringify({ type: "output", data: msg }));
-          client.send(JSON.stringify({ type: "exited", exitCode, runId: session.runId }));
-        }
-        try {
-          client.close(1000, "Process exited");
-        } catch {
-          // ignore close race
-        }
-      }
-      session.clients.clear();
-
-      // Guard against restart races: only remove this key if it still points to this session.
-      if (this.sessions.get(key) === session) {
-        this.sessions.delete(key);
-      }
-      this.recentLogs.set(key, {
-        runId: session.runId,
-        logBuffer: session.logBuffer.slice(-MAX_LOG_CHARS),
-        exitCode,
-        exitedAt: new Date().toISOString(),
-        startedAt: session.startedAt,
+        logBuffer: `${marker(`[run ${runId}]`, startedAt)}${marker(`$ ${service.cmd}`, startedAt)}`,
+        clients: new Set<WebSocket>(),
+        inputBuffer: "",
         runtime: {
-          terminalMode: session.runtime.terminalMode,
-          ptyAvailable: session.runtime.ptyAvailable,
-          warnings: [...session.runtime.warnings],
-          effectiveUrl: session.runtime.effectiveUrl,
-          port: session.runtime.port,
-          readyHintSeen: session.runtime.readyHintSeen,
+          terminalMode: runner.mode,
+          ptyAvailable: false,
+          warnings: [],
+          readyHintSeen: false,
         },
-        exitWasRestartReplace: replacedByRestart,
-        exitWasStopRequest: stopRequested,
+        warningKeys: new Set<string>(),
+        detectedUrls: [],
+        stopRequested: false,
+        urlProbeInFlight: false,
+      };
+
+      if (typeof launch.reassignedFrom === "number") {
+        this.appendWarning(
+          session,
+          `Auto-assigned port changed from ${launch.reassignedFrom} to ${launchPort} because the previous reservation was unavailable.`,
+        );
+      }
+
+      if (typeof runner.pid === "number" && Number.isInteger(runner.pid) && runner.pid > 0) {
+        this.saveOwnedRun({
+          runId,
+          projectId: project.id,
+          serviceName: service.name,
+          projectRoot: project.root,
+          cmd: service.cmd,
+          cwd,
+          startedAt,
+          pid: runner.pid,
+          mode: runner.mode,
+        });
+      }
+
+      this.recordHistory(project.id, service.name, "start", {
+        runId,
+        data: {
+          cmd: service.cmd,
+          cwd: service.cwd || ".",
+          ...(typeof launchPort === "number" ? { port: launchPort } : {}),
+          mode: runner.mode,
+          ptyAvailable: false,
+        },
       });
 
-      // Keep memory bounded.
-      if (this.recentLogs.size > MAX_RECENT_LOGS) {
-        const oldestKey = this.recentLogs.keys().next().value;
-        if (oldestKey) {
-          this.recentLogs.delete(oldestKey);
-        }
-      }
-    });
+      runner.onData((data) => {
+        this.appendLog(session, data);
+        this.updateRuntimeMetadata(session, data);
+        this.broadcastOutput(session, data);
+      });
 
-    this.sessions.set(key, session);
-    return session;
+      runner.onExit((exitCode) => {
+        this.removeOwnedRun(session.runId);
+        const replacedByRestart = this.replacedRunIds.delete(session.runId);
+        const stopRequested = session.stopRequested;
+        const needsNewline = session.logBuffer && !session.logBuffer.endsWith("\n");
+        const msg = `${needsNewline ? "\n" : ""}${marker(`[process exited ${exitCode}]`)}`;
+        this.appendLog(session, msg);
+        this.recordHistory(session.projectId, session.serviceName, "exit", {
+          runId: session.runId,
+          data: {
+            exitCode,
+            ...(stopRequested ? { stopRequested: true } : {}),
+            ...(replacedByRestart ? { replacedByRestart: true } : {}),
+          },
+        });
+
+        for (const client of session.clients) {
+          if (client.readyState === client.OPEN) {
+            client.send(JSON.stringify({ type: "output", data: msg }));
+            client.send(JSON.stringify({ type: "exited", exitCode, runId: session.runId }));
+          }
+          try {
+            client.close(1000, "Process exited");
+          } catch {
+            // ignore close race
+          }
+        }
+        session.clients.clear();
+
+        // Guard against restart races: only remove this key if it still points to this session.
+        if (this.sessions.get(key) === session) {
+          this.sessions.delete(key);
+        }
+        this.recentLogs.set(key, {
+          runId: session.runId,
+          logBuffer: session.logBuffer.slice(-MAX_LOG_CHARS),
+          exitCode,
+          exitedAt: new Date().toISOString(),
+          startedAt: session.startedAt,
+          runtime: {
+            terminalMode: session.runtime.terminalMode,
+            ptyAvailable: session.runtime.ptyAvailable,
+            warnings: [...session.runtime.warnings],
+            effectiveUrl: session.runtime.effectiveUrl,
+            port: session.runtime.port,
+            readyHintSeen: session.runtime.readyHintSeen,
+          },
+          exitWasRestartReplace: replacedByRestart,
+          exitWasStopRequest: stopRequested,
+        });
+
+        // Keep memory bounded.
+        if (this.recentLogs.size > MAX_RECENT_LOGS) {
+          const oldestKey = this.recentLogs.keys().next().value;
+          if (oldestKey) {
+            this.recentLogs.delete(oldestKey);
+          }
+        }
+      });
+
+      this.sessions.set(key, session);
+      if (typeof launchPort === "number") {
+        void this.verifyLocalEffectiveUrl(session);
+      }
+      return session;
+    });
   }
 
   private requestStop(session: Session) {
@@ -1112,7 +1384,9 @@ export class ProcessManager {
       // Remove the previous session immediately; exit handler is guarded to avoid clobbering.
       this.sessions.delete(key);
 
-      if (typeof service.port === "number") {
+      if (typeof existing.launchPort === "number") {
+        await waitForPortRelease(existing.launchPort);
+      } else if (typeof service.port === "number") {
         await waitForPortRelease(service.port);
       }
     }

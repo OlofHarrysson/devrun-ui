@@ -23,6 +23,9 @@ export function CommandBar({
   selectedService,
   onAction,
 }: CommandBarProps) {
+  const openAppUrl =
+    selectedService?.running && selectedService.effectiveUrl ? selectedService.effectiveUrl : null;
+
   return (
     <div
       id="command-bar"
@@ -66,6 +69,17 @@ export function CommandBar({
           </div>
 
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            {openAppUrl ? (
+              <a
+                id="cmd-open-app-link"
+                className="btn btn-sm btn-accent btn-outline"
+                href={openAppUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open app
+              </a>
+            ) : null}
             <button
               id="cmd-start-btn"
               className="btn btn-sm btn-primary"

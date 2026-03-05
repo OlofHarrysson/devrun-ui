@@ -18,7 +18,9 @@ The second problem is that AIs and humans can't share one terminal and that it's
 - `dist/` and `.devrun/`: generated build/runtime artifacts (ignored by Git).
 
 ## Documentation Index
-- `README.md`: primary setup/usage/API contract reference for this repo.
+- `README.md`: primary product overview, setup, runtime model, and API contract reference for this repo.
+- `docs/USER-GUIDE.md`: first-time user walkthrough of the UI and service model.
+- `docs/ARCHITECTURE.md`: code-level structure, runtime flow, and main ownership boundaries.
 - `docs/VISION.md`: stable product direction and scope guardrails.
 - `AGENTS.md` (this file): contributor and implementation workflow conventions.
 

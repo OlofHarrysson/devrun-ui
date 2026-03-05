@@ -19,6 +19,7 @@ export interface ProjectServiceState {
   cmd: string;
   cwd?: string;
   port?: number;
+  effectiveUrl?: string;
   running: boolean;
   status?: ServiceLifecycleStatus;
   ready?: boolean;

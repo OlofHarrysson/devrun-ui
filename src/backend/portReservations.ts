@@ -7,6 +7,7 @@ type PortAssignment = {
   projectId: string;
   serviceName: string;
   port: number;
+  preferredPort?: number;
 };
 
 type PortAssignmentsFile = {
@@ -60,11 +61,20 @@ function readPortAssignmentsFile(): PortAssignment[] {
         ) {
           return null;
         }
-        return {
+        const parsedAssignment: PortAssignment = {
           projectId: candidate.projectId,
           serviceName: candidate.serviceName,
           port: candidate.port,
         };
+        if (
+          typeof candidate.preferredPort === "number" &&
+          Number.isInteger(candidate.preferredPort) &&
+          candidate.preferredPort >= 1 &&
+          candidate.preferredPort <= 65535
+        ) {
+          parsedAssignment.preferredPort = candidate.preferredPort;
+        }
+        return parsedAssignment;
       })
       .filter((entry): entry is PortAssignment => Boolean(entry));
   } catch {
@@ -90,22 +100,18 @@ function writePortAssignmentsFile(assignments: PortAssignment[]) {
 export function prunePortAssignments() {
   const configs = readAllProjectConfigs();
   const validServiceKeys = new Set<string>();
-  const explicitPortKeys = new Set<string>();
 
   for (const [projectId, config] of Object.entries(configs)) {
     for (const service of config.services) {
       const key = makeServiceKey(projectId, service.name);
       validServiceKeys.add(key);
-      if (typeof service.port === "number") {
-        explicitPortKeys.add(key);
-      }
     }
   }
 
   const current = readPortAssignmentsFile();
   const filtered = current.filter((entry) => {
     const key = makeServiceKey(entry.projectId, entry.serviceName);
-    return validServiceKeys.has(key) && !explicitPortKeys.has(key);
+    return validServiceKeys.has(key);
   });
 
   if (filtered.length !== current.length) {
@@ -116,19 +122,28 @@ export function prunePortAssignments() {
 }
 
 export function getAssignedPort(projectId: string, serviceName: string) {
+  return getPortAssignment(projectId, serviceName)?.port;
+}
+
+export function getPortAssignment(projectId: string, serviceName: string) {
   const key = makeServiceKey(projectId, serviceName);
   const assignment = prunePortAssignments().find(
     (entry) => makeServiceKey(entry.projectId, entry.serviceName) === key,
   );
-  return assignment?.port;
+  return assignment;
 }
 
-export function setAssignedPort(projectId: string, serviceName: string, port: number) {
+export function setAssignedPort(
+  projectId: string,
+  serviceName: string,
+  port: number,
+  preferredPort?: number,
+) {
   const key = makeServiceKey(projectId, serviceName);
   const assignments = prunePortAssignments().filter(
     (entry) => makeServiceKey(entry.projectId, entry.serviceName) !== key,
   );
-  assignments.push({ projectId, serviceName, port });
+  assignments.push({ projectId, serviceName, port, preferredPort });
   writePortAssignmentsFile(assignments);
 }
 
@@ -146,13 +161,13 @@ export function deleteAssignedPort(projectId: string, serviceName: string) {
 export function listReservedPorts(): ReservedPortOwner[] {
   const configs = readAllProjectConfigs();
   const owners: ReservedPortOwner[] = [];
-  const explicitPortKeys = new Set<string>();
+  const exactPortKeys = new Set<string>();
 
   for (const [projectId, config] of Object.entries(configs)) {
     for (const service of config.services) {
       const key = makeServiceKey(projectId, service.name);
-      if (typeof service.port === "number") {
-        explicitPortKeys.add(key);
+      if (typeof service.port === "number" && service.portMode === "exact") {
+        exactPortKeys.add(key);
         owners.push({
           projectId,
           serviceName: service.name,
@@ -165,7 +180,7 @@ export function listReservedPorts(): ReservedPortOwner[] {
 
   for (const assignment of prunePortAssignments()) {
     const key = makeServiceKey(assignment.projectId, assignment.serviceName);
-    if (explicitPortKeys.has(key)) {
+    if (exactPortKeys.has(key)) {
       continue;
     }
     owners.push({

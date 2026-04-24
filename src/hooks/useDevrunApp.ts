@@ -798,8 +798,12 @@ export function useDevrunApp(): DevrunAppModel {
       const cwd = (cwdInput || "").trim();
 
       const portInput = window.prompt(
-        `Port for '${serviceName}' (optional, 1-65535):`,
-        typeof existing.port === "number" ? String(existing.port) : "",
+        `Preferred starting port for '${serviceName}' (optional, 1-65535):`,
+        typeof existing.requestedPort === "number"
+          ? String(existing.requestedPort)
+          : typeof existing.port === "number"
+            ? String(existing.port)
+            : "",
       );
       if (portInput === null) {
         if (!services.length) {
@@ -825,6 +829,7 @@ export function useDevrunApp(): DevrunAppModel {
       }
       if (typeof configuredPort === "number") {
         nextService.port = configuredPort;
+        nextService.portMode = "preferred";
       }
       services.push(nextService);
 

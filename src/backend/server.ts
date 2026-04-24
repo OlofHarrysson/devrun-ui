@@ -4,7 +4,7 @@ import http, { type IncomingMessage } from "http";
 import type { Socket } from "net";
 import express, { type Response } from "express";
 import next from "next";
-import { WebSocketServer, type RawData } from "ws";
+import { WebSocketServer } from "ws";
 import { readRegistry, addProject, removeProject, getRegistryPath } from "./registry";
 import {
   getProjectConfigPath,
@@ -13,14 +13,14 @@ import {
   writeProjectConfig,
 } from "./config";
 import { PortUnavailableError, ProcessManager } from "./processManager";
-import type { ClientLogEntry, ProjectConfig, ProjectService, ProjectState, RegistryEntry } from "./types";
+import { getPortAssignment } from "./portReservations";
+import type { ProjectConfig, ProjectService, ProjectState, RegistryEntry } from "./types";
 
 const PORT = Number(process.env.PORT || 4317);
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
-const clientLogWss = new WebSocketServer({ noServer: true });
-const processes = new ProcessManager({ devrunPort: PORT });
+const processes = new ProcessManager();
 const dev = process.env.NODE_ENV !== "production";
 const projectRoot = process.cwd();
 const preferWebpackDev = dev && process.env.DEVRUN_USE_TURBOPACK !== "1";
@@ -32,12 +32,6 @@ const nextApp = next({
 const handleNext = nextApp.getRequestHandler();
 
 app.use(express.json({ limit: "1mb" }));
-
-const CLIENT_LOG_MAX_RAW_BYTES = 16 * 1024;
-const CLIENT_LOG_MAX_ENTRIES = 50;
-const CLIENT_LOG_FIELD_MAX_CHARS = 2000;
-const CLIENT_LOG_LEVELS = new Set(["debug", "log", "info", "warn", "error"]);
-const CLIENT_LOG_SOURCES = new Set(["console", "window_error", "unhandledrejection"]);
 
 function getUpgradePath(req: IncomingMessage): string {
   try {
@@ -53,12 +47,6 @@ server.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
   if (pathname === "/ws") {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit("connection", ws, req);
-    });
-    return;
-  }
-  if (pathname === "/ws/client-logs") {
-    clientLogWss.handleUpgrade(req, socket, head, (ws) => {
-      clientLogWss.emit("connection", ws, req);
     });
     return;
   }
@@ -335,9 +323,12 @@ function buildProcessPayload(
   runInfo: ReturnType<ProcessManager["getRunInfo"]>,
   usedDefaultService: boolean,
 ) {
+  const portAssignment = getPortAssignment(project.id, service.name);
   const resolvedPort =
     typeof runInfo.port === "number"
       ? runInfo.port
+      : typeof portAssignment?.port === "number"
+        ? portAssignment.port
       : typeof service.port === "number"
         ? service.port
         : null;
@@ -356,6 +347,15 @@ function buildProcessPayload(
       typeof runInfo.ptyAvailable === "boolean" ? runInfo.ptyAvailable : null,
     effectiveUrl: runInfo.effectiveUrl || null,
     port: resolvedPort,
+    requestedPort:
+      typeof runInfo.requestedPort === "number"
+        ? runInfo.requestedPort
+        : typeof portAssignment?.preferredPort === "number"
+          ? portAssignment.preferredPort
+          : typeof service.port === "number"
+            ? service.port
+            : null,
+    portMode: service.portMode || null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
     lastExitCode:
       typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
@@ -378,6 +378,7 @@ function buildProjectState(project: RegistryEntry): ProjectState {
       defaultService: config.defaultService,
       services: config.services.map((service) => {
         const runInfo = processes.getRunInfo(project.id, service.name);
+        const portAssignment = getPortAssignment(project.id, service.name);
         return {
           name: service.name,
           cmd: service.cmd,
@@ -385,9 +386,20 @@ function buildProjectState(project: RegistryEntry): ProjectState {
           port:
             typeof runInfo.port === "number"
               ? runInfo.port
+              : typeof portAssignment?.port === "number"
+                ? portAssignment.port
               : typeof service.port === "number"
                 ? service.port
                 : undefined,
+          requestedPort:
+            typeof runInfo.requestedPort === "number"
+              ? runInfo.requestedPort
+              : typeof portAssignment?.preferredPort === "number"
+                ? portAssignment.preferredPort
+                : typeof service.port === "number"
+                  ? service.port
+                  : undefined,
+          portMode: service.portMode,
           running: runInfo.running,
           status: runInfo.status,
           ready: runInfo.ready,
@@ -463,101 +475,6 @@ function parseIntegerQuery(
   return { ok: true as const, value };
 }
 
-function rawDataByteLength(raw: RawData): number {
-  if (typeof raw === "string") {
-    return Buffer.byteLength(raw);
-  }
-  if (raw instanceof Buffer) {
-    return raw.byteLength;
-  }
-  if (Array.isArray(raw)) {
-    return raw.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-  }
-  return raw.byteLength;
-}
-
-function rawDataToString(raw: RawData): string {
-  if (typeof raw === "string") {
-    return raw;
-  }
-  if (raw instanceof Buffer) {
-    return raw.toString("utf8");
-  }
-  if (Array.isArray(raw)) {
-    return Buffer.concat(raw).toString("utf8");
-  }
-  return Buffer.from(raw as ArrayBuffer).toString("utf8");
-}
-
-function sanitizeClientLogText(input: unknown): string {
-  if (typeof input !== "string") {
-    return "";
-  }
-  return input.replace(/\s+/g, " ").trim().slice(0, CLIENT_LOG_FIELD_MAX_CHARS);
-}
-
-function normalizeClientLogTimestamp(input: unknown): string {
-  if (typeof input !== "string") {
-    return new Date().toISOString();
-  }
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) {
-    return new Date().toISOString();
-  }
-  return date.toISOString();
-}
-
-function parseClientLogBatch(input: unknown) {
-  if (!input || typeof input !== "object") {
-    return { ok: false as const, error: "Malformed payload" };
-  }
-
-  const payload = input as { type?: unknown; entries?: unknown };
-  if (payload.type !== "client_log_batch") {
-    return { ok: false as const, error: "Unsupported client log message type" };
-  }
-  if (!Array.isArray(payload.entries)) {
-    return { ok: false as const, error: "Missing entries array" };
-  }
-  if (payload.entries.length > CLIENT_LOG_MAX_ENTRIES) {
-    return { ok: false as const, error: "Too many client log entries in one message" };
-  }
-
-  const entries: ClientLogEntry[] = [];
-  for (const rawEntry of payload.entries) {
-    if (!rawEntry || typeof rawEntry !== "object") {
-      return { ok: false as const, error: "Invalid client log entry" };
-    }
-    const entry = rawEntry as {
-      level?: unknown;
-      ts?: unknown;
-      message?: unknown;
-      path?: unknown;
-      source?: unknown;
-      clientId?: unknown;
-    };
-    const level = sanitizeClientLogText(entry.level).toLowerCase();
-    const source = sanitizeClientLogText(entry.source).toLowerCase();
-    if (!CLIENT_LOG_LEVELS.has(level)) {
-      return { ok: false as const, error: `Invalid client log level '${level || "unknown"}'` };
-    }
-    if (!CLIENT_LOG_SOURCES.has(source)) {
-      return { ok: false as const, error: `Invalid client log source '${source || "unknown"}'` };
-    }
-
-    entries.push({
-      level: level as ClientLogEntry["level"],
-      ts: normalizeClientLogTimestamp(entry.ts),
-      message: sanitizeClientLogText(entry.message),
-      path: sanitizeClientLogText(entry.path) || "/",
-      source: source as ClientLogEntry["source"],
-      clientId: sanitizeClientLogText(entry.clientId) || "unknown-client",
-    });
-  }
-
-  return { ok: true as const, entries };
-}
-
 app.get("/api/state", (_req, res) => {
   res.json(buildState());
 });
@@ -587,7 +504,7 @@ app.get("/api/capabilities", (_req, res) => {
           limit: `optional integer, default 25, max ${processes.historyRetention()}`,
         },
         description:
-          "Returns non-verbose lifecycle/command events (start, stop_requested, restart_requested, stdin_command, exit, client_log).",
+          "Returns non-verbose lifecycle/command events (start, stop_requested, restart_requested, stdin_command, exit).",
       },
       logs: {
         method: "GET",
@@ -630,19 +547,6 @@ app.get("/api/capabilities", (_req, res) => {
           runId: "optional string",
         },
       },
-      clientLogWs: {
-        method: "WS",
-        path: "/ws/client-logs",
-        query: {
-          projectId: "required string",
-          serviceName: "required string",
-          runId: "required string (must match active run)",
-        },
-        message: {
-          type: "client_log_batch",
-          entries: `array (max ${CLIENT_LOG_MAX_ENTRIES}) of { level, ts, message, path, source, clientId }`,
-        },
-      },
     },
     pollingRecipe: [
       "Call GET /api/state to discover projects, defaultService, and runtime metadata.",
@@ -651,10 +555,9 @@ app.get("/api/capabilities", (_req, res) => {
       "Poll GET /api/history?projectPath=...&afterSeq=<nextAfterSeq> for incremental events.",
       "Use status/ready fields to detect starting vs ready vs error without log scraping.",
       "Call POST /api/process/cleanup-orphans if runtime state looks desynced after crashes/restarts.",
-      "Configured service ports are strict; start/restart returns HTTP 409 when the explicit port is occupied or already reserved by another Devrun service.",
-      "Prefer returned effectiveUrl for managed apps instead of constructing localhost URLs manually.",
+      "Configured service ports are preferred starting points; Devrun assigns the next available unreserved port when needed.",
+      "Prefer returned effectiveUrl for managed apps; Devrun publishes localhost when it verifies that localhost is safe for the assigned port.",
       "Use GET /api/logs with runId for verbose output when needed.",
-      "Use WS /ws/client-logs to forward browser-side logs into terminal/history for the active run.",
     ],
   });
 });
@@ -931,6 +834,10 @@ app.get("/api/logs", (req, res) => {
     projectResult.project.id,
     resolvedService.service.name,
   );
+  const portAssignment = getPortAssignment(
+    projectResult.project.id,
+    resolvedService.service.name,
+  );
   return res.json({
     projectId: projectResult.project.id,
     projectPath: projectResult.project.root,
@@ -949,9 +856,20 @@ app.get("/api/logs", (req, res) => {
     port:
       typeof runInfo.port === "number"
         ? runInfo.port
+        : typeof portAssignment?.port === "number"
+          ? portAssignment.port
         : typeof resolvedService.service.port === "number"
           ? resolvedService.service.port
           : null,
+    requestedPort:
+      typeof runInfo.requestedPort === "number"
+        ? runInfo.requestedPort
+        : typeof portAssignment?.preferredPort === "number"
+          ? portAssignment.preferredPort
+          : typeof resolvedService.service.port === "number"
+            ? resolvedService.service.port
+            : null,
+    portMode: resolvedService.service.portMode || null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
     lastExitCode:
       typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
@@ -1021,6 +939,7 @@ app.get("/api/history", (req, res) => {
   const projectId = projectResult.project.id;
   const serviceName = resolvedService.service.name;
   const runInfo = processes.getRunInfo(projectId, serviceName);
+  const portAssignment = getPortAssignment(projectId, serviceName);
   const history = processes.getHistory(projectId, serviceName, afterSeq, limit);
 
   return res.json({
@@ -1040,9 +959,20 @@ app.get("/api/history", (req, res) => {
     port:
       typeof runInfo.port === "number"
         ? runInfo.port
+        : typeof portAssignment?.port === "number"
+          ? portAssignment.port
         : typeof resolvedService.service.port === "number"
           ? resolvedService.service.port
           : null,
+    requestedPort:
+      typeof runInfo.requestedPort === "number"
+        ? runInfo.requestedPort
+        : typeof portAssignment?.preferredPort === "number"
+          ? portAssignment.preferredPort
+          : typeof resolvedService.service.port === "number"
+            ? resolvedService.service.port
+            : null,
+    portMode: resolvedService.service.portMode || null,
     warnings: Array.isArray(runInfo.warnings) ? runInfo.warnings : [],
     lastExitCode:
       typeof runInfo.lastExitCode === "number" ? runInfo.lastExitCode : null,
@@ -1122,50 +1052,6 @@ wss.on("connection", (ws, req: IncomingMessage) => {
 
   ws.on("close", () => {
     processes.detach(projectId, serviceName, ws);
-  });
-});
-
-clientLogWss.on("connection", (ws, req: IncomingMessage) => {
-  const baseUrl = `http://${req.headers.host || "localhost"}`;
-  const url = new URL(req.url || "/ws/client-logs", baseUrl);
-  const projectId = url.searchParams.get("projectId") || "";
-  const serviceName = url.searchParams.get("serviceName") || "";
-  const runId = url.searchParams.get("runId") || "";
-
-  if (!projectId || !serviceName || !runId) {
-    ws.close(1008, "Missing projectId/serviceName/runId");
-    return;
-  }
-
-  const validated = processes.validateClientLogTarget(projectId, serviceName, runId);
-  if (!validated.ok) {
-    ws.close(1008, validated.error);
-    return;
-  }
-
-  ws.on("message", (raw: RawData) => {
-    if (rawDataByteLength(raw) > CLIENT_LOG_MAX_RAW_BYTES) {
-      return;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(rawDataToString(raw));
-    } catch {
-      ws.close(1008, "Malformed client log payload");
-      return;
-    }
-
-    const batch = parseClientLogBatch(parsed);
-    if (!batch.ok) {
-      ws.close(1008, batch.error);
-      return;
-    }
-
-    const result = processes.ingestClientLogs(projectId, serviceName, runId, batch.entries);
-    if (!result.ok) {
-      ws.close(1008, result.error);
-    }
   });
 });
 

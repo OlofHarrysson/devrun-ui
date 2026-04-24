@@ -65,6 +65,13 @@ export function CommandBar({
               <span className="badge badge-sm badge-outline font-mono">
                 port: {typeof selectedService.port === "number" ? selectedService.port : "auto"}
               </span>
+              {typeof selectedService.requestedPort === "number" &&
+              typeof selectedService.port === "number" &&
+              selectedService.requestedPort !== selectedService.port ? (
+                <span className="badge badge-sm badge-ghost font-mono">
+                  requested: {selectedService.requestedPort}
+                </span>
+              ) : null}
             </div>
           </div>
 

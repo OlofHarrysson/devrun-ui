@@ -12,6 +12,7 @@ export interface ProjectServiceConfigInput {
   cmd: string;
   cwd?: string;
   port?: number;
+  portMode?: "preferred" | "exact";
 }
 
 export interface ProjectServiceState {
@@ -19,6 +20,8 @@ export interface ProjectServiceState {
   cmd: string;
   cwd?: string;
   port?: number;
+  requestedPort?: number;
+  portMode?: "preferred" | "exact";
   effectiveUrl?: string;
   running: boolean;
   status?: ServiceLifecycleStatus;

@@ -6,7 +6,6 @@ import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
-import { WebSocket } from "ws";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,7 +63,7 @@ function writeDevPackage(projectRoot, name = "devrun-smoke-app") {
           dev:
             "node -e \"const http=require('http'); const port=Number(process.env.PORT||4567); " +
             "const server=http.createServer((_req,res)=>{res.writeHead(200, {'content-type':'text/plain'}); res.end('ok');}); " +
-            "server.listen(port, '0.0.0.0', ()=>console.log('Local: http://localhost:'+port)); " +
+            "server.listen(port, ()=>console.log('Local: http://localhost:'+port)); " +
             "setInterval(() => console.log('tick'), 250);\"",
         },
       },
@@ -140,41 +139,6 @@ async function waitForProjectService(baseUrl, projectRoot, predicate, timeoutMs 
   }
 
   throw new Error(`Timed out waiting for project/service state for ${projectRoot}`);
-}
-
-async function openWebSocket(url, timeoutMs = 5000) {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
-    let done = false;
-
-    const finish = (cb, value) => {
-      if (done) {
-        return;
-      }
-      done = true;
-      clearTimeout(timeout);
-      cb(value);
-    };
-
-    const timeout = setTimeout(() => {
-      try {
-        ws.close();
-      } catch {
-        // no-op
-      }
-      finish(reject, new Error(`Timed out opening WebSocket: ${url}`));
-    }, timeoutMs);
-
-    ws.once("open", () => {
-      finish(resolve, ws);
-    });
-    ws.once("error", (error) => {
-      finish(
-        reject,
-        error instanceof Error ? error : new Error(`WebSocket error: ${String(error)}`),
-      );
-    });
-  });
 }
 
 async function stopServer(child) {
@@ -293,8 +257,8 @@ async function main() {
       "Expected verified effectiveUrl in /api/state",
     );
     assert(
-      !service.effectiveUrl.includes("localhost"),
-      "Expected effectiveUrl to use a numeric loopback host",
+      service.effectiveUrl.includes("localhost"),
+      "Expected effectiveUrl to prefer localhost when loopback probing is safe",
     );
     const autoAssignedPortA = service.port;
 
@@ -324,70 +288,6 @@ async function main() {
     assert(
       logsByLines.output.includes("$ npm run dev"),
       "Expected command marker in line-based /api/logs output",
-    );
-
-    const wsBaseUrl = baseUrl.replace(/^http/, "ws");
-    const clientLogWsUrl =
-      `${wsBaseUrl}/ws/client-logs?projectId=${encodeURIComponent(project.id)}` +
-      `&serviceName=${encodeURIComponent(service.name)}` +
-      `&runId=${encodeURIComponent(started.process.runId)}`;
-    const clientLogWs = await openWebSocket(clientLogWsUrl);
-    clientLogWs.send(
-      JSON.stringify({
-        type: "client_log_batch",
-        entries: [
-          {
-            level: "warn",
-            ts: new Date().toISOString(),
-            message: "smoke warn bridge",
-            path: "/smoke",
-            source: "console",
-            clientId: "smoke-client",
-          },
-          {
-            level: "debug",
-            ts: new Date().toISOString(),
-            message: "smoke debug bridge",
-            path: "/smoke",
-            source: "console",
-            clientId: "smoke-client",
-          },
-        ],
-      }),
-    );
-    await sleep(150);
-    try {
-      clientLogWs.close();
-    } catch {
-      // no-op
-    }
-
-    const logsAfterClientBridge = await requestJson(
-      `${baseUrl}/api/logs?projectPath=${encodeURIComponent(tempProjectRoot)}&chars=6000`,
-    );
-    assert(
-      logsAfterClientBridge.output.includes("[browser:warn] /smoke smoke warn bridge"),
-      "Expected warn browser log in /api/logs output",
-    );
-    assert(
-      logsAfterClientBridge.output.includes("[browser:debug] /smoke smoke debug bridge"),
-      "Expected debug browser log in /api/logs output",
-    );
-
-    const historyAfterClientBridge = await requestJson(
-      `${baseUrl}/api/history?projectPath=${encodeURIComponent(tempProjectRoot)}&limit=50`,
-    );
-    assert(
-      historyAfterClientBridge.events.some(
-        (event) => event.type === "client_log" && event.data?.level === "warn",
-      ),
-      "Expected warn client_log event in /api/history",
-    );
-    assert(
-      historyAfterClientBridge.events.some(
-        (event) => event.type === "client_log" && event.data?.level === "debug",
-      ),
-      "Expected debug client_log event in /api/history",
     );
 
     await requestJson(`${baseUrl}/api/process/stop`, {
@@ -425,8 +325,8 @@ async function main() {
       "Expected second auto-assigned service to get a different reserved port",
     );
     assert(
-      typeof serviceB.effectiveUrl === "string" && !serviceB.effectiveUrl.includes("localhost"),
-      "Expected second service effectiveUrl to use a numeric loopback host",
+      typeof serviceB.effectiveUrl === "string" && serviceB.effectiveUrl.includes("localhost"),
+      "Expected second service effectiveUrl to prefer localhost when loopback probing is safe",
     );
 
     await requestJson(`${baseUrl}/api/process/start`, {
@@ -448,8 +348,8 @@ async function main() {
     );
     assert(
       typeof serviceAAfterRestart.effectiveUrl === "string" &&
-        !serviceAAfterRestart.effectiveUrl.includes("localhost"),
-      "Expected restarted service effectiveUrl to use a numeric loopback host",
+        serviceAAfterRestart.effectiveUrl.includes("localhost"),
+      "Expected restarted service effectiveUrl to prefer localhost when loopback probing is safe",
     );
 
     await requestJson(`${baseUrl}/api/process/stop`, {
@@ -544,13 +444,33 @@ async function main() {
         method: "POST",
         body: JSON.stringify({ projectPath: tempProjectRoot }),
       });
-      assert(conflictStart.status === 409, "Expected 409 when configured port is already in use");
       assert(
-        typeof conflictStart.body?.error === "string" &&
-          conflictStart.body.error.toLowerCase().includes("configured port"),
-        "Expected configured port conflict message in start error response",
+        conflictStart.status === 200 && conflictStart.body?.ok === true,
+        "Expected preferred port conflict to assign the next available port",
+      );
+      assert(
+        typeof conflictStart.body?.process?.port === "number" &&
+          conflictStart.body.process.port > conflictPort,
+        "Expected assigned port to be greater than unavailable preferred port",
+      );
+      assert(
+        Array.isArray(conflictStart.body?.process?.warnings) &&
+          conflictStart.body.process.warnings.some((warning) =>
+            String(warning).includes(`Preferred port ${conflictPort} was unavailable`),
+          ),
+        "Expected warning when preferred port is unavailable",
       );
     } finally {
+      await requestJson(`${baseUrl}/api/process/stop`, {
+        method: "POST",
+        body: JSON.stringify({ projectPath: tempProjectRoot }),
+      }).catch(() => undefined);
+      await waitForProjectService(
+        baseUrl,
+        tempProjectRoot,
+        (_project, candidateService) =>
+          candidateService.running === false && candidateService.status === "stopped",
+      ).catch(() => undefined);
       await new Promise((resolve) => {
         occupied.close(() => {
           resolve(undefined);
@@ -596,15 +516,25 @@ async function main() {
           body: JSON.stringify({ projectPath: tempProjectRoot }),
         });
         assert(
-          conflictStartIpv6.status === 409,
-          "Expected 409 when configured port is already in use on ::1",
+          conflictStartIpv6.status === 200 && conflictStartIpv6.body?.ok === true,
+          "Expected preferred port conflict on ::1 to assign the next available port",
         );
         assert(
-          typeof conflictStartIpv6.body?.error === "string" &&
-            conflictStartIpv6.body.error.toLowerCase().includes("configured port"),
-          "Expected configured port conflict message for ::1 listener",
+          typeof conflictStartIpv6.body?.process?.port === "number" &&
+            conflictStartIpv6.body.process.port > ipv6ConflictPort,
+          "Expected assigned port to be greater than unavailable IPv6 preferred port",
         );
       } finally {
+        await requestJson(`${baseUrl}/api/process/stop`, {
+          method: "POST",
+          body: JSON.stringify({ projectPath: tempProjectRoot }),
+        }).catch(() => undefined);
+        await waitForProjectService(
+          baseUrl,
+          tempProjectRoot,
+          (_project, candidateService) =>
+            candidateService.running === false && candidateService.status === "stopped",
+        ).catch(() => undefined);
         await new Promise((resolve) => {
           ipv6Occupied.close(() => {
             resolve(undefined);

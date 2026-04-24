@@ -59,6 +59,16 @@ function parseServicePort(input: unknown): number | undefined {
   return value;
 }
 
+function parsePortMode(input: unknown): "preferred" | "exact" | undefined {
+  if (input === undefined || input === null || input === "") {
+    return undefined;
+  }
+  if (input === "preferred" || input === "exact") {
+    return input;
+  }
+  throw new Error("Service portMode must be either 'preferred' or 'exact'");
+}
+
 function inferPortFromCommand(command: string): number | undefined {
   const match = command.match(/^\s*PORT=(\d+)\s+/);
   if (!match) {
@@ -81,6 +91,7 @@ function sanitizeConfig(config: Partial<ProjectConfig>): ProjectConfig {
       const name = service.name.trim();
       const cmd = service.cmd.trim();
       const explicitPort = parseServicePort(service.port);
+      const explicitPortMode = parsePortMode(service.portMode);
       const inferredPort = inferPortFromCommand(cmd);
       if (
         typeof explicitPort === "number" &&
@@ -91,11 +102,19 @@ function sanitizeConfig(config: Partial<ProjectConfig>): ProjectConfig {
           `Service '${name}' has port=${explicitPort} but command sets PORT=${inferredPort}. Use one port source.`,
         );
       }
+      const port = explicitPort ?? inferredPort;
+      const portMode =
+        typeof inferredPort === "number"
+          ? "exact"
+          : typeof port === "number"
+            ? explicitPortMode || "preferred"
+            : undefined;
       return {
         name,
         cmd,
         cwd: service.cwd?.trim() || undefined,
-        port: explicitPort ?? inferredPort,
+        port,
+        portMode,
       };
     });
 

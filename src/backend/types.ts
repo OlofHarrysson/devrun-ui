@@ -10,6 +10,7 @@ export type ProjectService = {
   cmd: string;
   cwd?: string;
   port?: number;
+  portMode?: "preferred" | "exact";
 };
 
 export type ProjectConfig = {
@@ -36,6 +37,7 @@ export type ServiceRuntimeState = {
   warnings?: string[];
   effectiveUrl?: string;
   port?: number;
+  requestedPort?: number;
   lastExitCode?: number;
   exitWasRestartReplace?: boolean;
   exitWasStopRequest?: boolean;
@@ -55,26 +57,12 @@ export type RunningService = {
   port?: number;
 };
 
-export type ClientLogLevel = "debug" | "log" | "info" | "warn" | "error";
-
-export type ClientLogSource = "console" | "window_error" | "unhandledrejection";
-
-export type ClientLogEntry = {
-  level: ClientLogLevel;
-  ts: string;
-  message: string;
-  path: string;
-  source: ClientLogSource;
-  clientId: string;
-};
-
 export type ServiceHistoryEventType =
   | "start"
   | "stop_requested"
   | "restart_requested"
   | "stdin_command"
-  | "exit"
-  | "client_log";
+  | "exit";
 
 export type ServiceHistoryEvent = {
   seq: number;

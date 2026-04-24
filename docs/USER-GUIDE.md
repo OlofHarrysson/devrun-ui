@@ -27,7 +27,7 @@ A service is a named shell command inside that project, for example:
 
 Each service can also have:
 - an optional working directory relative to the project root
-- an optional explicit port
+- an optional preferred starting port
 
 ### Default Service
 
@@ -35,15 +35,16 @@ The default service is the one Devrun uses when an API call omits `serviceName`.
 
 ### History vs Logs
 
-- History is the low-noise lifecycle timeline: starts, stops, restarts, exits, stdin commands, and client logs.
+- History is the low-noise lifecycle timeline: starts, stops, restarts, exits, and stdin commands.
 - Logs are the verbose terminal output from the running or most recent service run.
 
 ### Port
 
 Devrun injects `PORT=<port>` before launch.
 
-- If you set an explicit `port`, that port is strict.
-- If you do not set a port, Devrun auto-assigns and reserves a stable port for that service.
+- If you set a `port`, Devrun treats it as the preferred starting port.
+- If that port is occupied or reserved, Devrun assigns the next available port upward.
+- If you do not set a port, Devrun starts from its default web range.
 
 This means one stopped service does not silently lose its port to another Devrun-managed service.
 
@@ -51,7 +52,7 @@ This means one stopped service does not silently lose its port to another Devrun
 
 If a running service exposes a local web URL, Devrun publishes it as `effectiveUrl`.
 
-Use that value as the app URL. Do not assume `http://localhost:<port>` is correct.
+Use that value as the app URL. Devrun prefers `localhost` when it can verify that `localhost` safely reaches the assigned port.
 
 ## First Run
 
@@ -102,7 +103,7 @@ For many repos, the smallest useful setup is just:
 Service name: web
 Command: npm run dev
 Working directory: .
-Port: leave blank unless you need a fixed port
+Port: optional preferred starting port, for example `3000` for a web app or `8080` for an API
 ```
 
 ### 3. Start a service
@@ -130,17 +131,15 @@ Use:
 
 ## How Devrun Chooses Ports
 
-### Explicit port
+### Preferred port
 
-If a service config includes a `port`, Devrun treats it as reserved for that service.
+If a service config includes a `port`, Devrun starts its search there.
 
-Start or restart will fail with `409` if:
-- another process is already listening on that port
-- another Devrun service already reserves that explicit port
+For example, if a web service asks for `3000` but `3000` is unavailable, Devrun assigns `3001`, injects `PORT=3001`, and reports that assignment in state.
 
 ### Auto-assigned port
 
-If a service has no explicit `port`, Devrun chooses one and keeps it reserved for that service.
+If a service has no `port`, Devrun chooses one and keeps it reserved for that service.
 
 That reservation stays stable across stop/start cycles, so:
 - service A can stop
@@ -212,15 +211,15 @@ Fix it with `Configure` and set the real command, `cwd`, and optional port.
 
 Either:
 - another process is using that port, or
-- another Devrun service already reserves that explicit port
+- another Devrun service already reserves that port
 
-Use a different explicit port, or remove the explicit port and let Devrun assign one.
+Use a different preferred starting port, or remove the port and let Devrun assign one.
 
 ### App starts, but the URL is wrong
 
 Use the `Open app` button or the `effectiveUrl` from Devrun APIs.
 
-Do not assume `localhost` is always correct.
+Devrun normally publishes `localhost`; if IPv4/IPv6 loopback behaves inconsistently, it may fall back to a numeric loopback URL and show a warning.
 
 ### Service exits immediately
 

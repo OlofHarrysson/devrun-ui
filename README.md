@@ -40,7 +40,7 @@ A project is a repo root known to Devrun.
 
 ### Service
 
-A service is a named shell command inside that project, with optional `cwd` and optional explicit `port`.
+A service is a named shell command inside that project, with optional `cwd` and optional preferred starting `port`.
 
 ### Default Service
 
@@ -55,14 +55,15 @@ The default service is the service Devrun uses when an API call omits `serviceNa
 
 Devrun injects `PORT=<port>` before launch.
 
-- Explicit ports are strict.
-- Services without an explicit `port` get a stable Devrun-managed reserved port.
+- A configured `port` is the preferred starting point.
+- If that port is occupied or reserved, Devrun assigns the next available port upward.
+- Assigned ports stay stable across stop/start cycles.
 
 ### Effective URL
 
 If a service exposes a local web URL, Devrun returns it as `effectiveUrl`.
 
-Use that value instead of guessing `http://localhost:<port>`.
+Use that value instead of reconstructing a URL manually. Devrun prefers `localhost` when it can verify it safely reaches the assigned port.
 
 ## Quick start
 
@@ -123,9 +124,9 @@ Devrun may auto-seed one `web` service from `package.json` (`npm run dev` or `np
   - otherwise `npm run start` if a `start` script exists
 - You can override that seed via the `Configure` button in the UI or `POST /api/project-config`.
 - Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
-- Devrun injects `PORT=<port>` before launch. If no explicit `port` is configured, it auto-assigns and reserves a stable port per service.
-- Explicit ports are strict: if the chosen port is already taken or already reserved by another Devrun service, start/restart returns `409`.
-- Auto-assigned ports stay sticky across stop/start cycles so one stopped service does not silently lose its port to another Devrun-managed service.
+- Devrun injects the assigned `PORT=<port>` before launch.
+- A configured `port` is a preferred starting point, not a hard reservation; if it is occupied or reserved, Devrun walks upward to the next available port.
+- Assigned ports stay sticky across stop/start cycles so one stopped service does not silently lose its port to another Devrun-managed service.
 - Devrun persists owned child runs and performs an orphan cleanup sweep on startup.
 - You can trigger manual cleanup via `POST /api/process/cleanup-orphans` if runtime state becomes desynced.
 - Devrun injects `NODE_OPTIONS=--localstorage-file=<...>` when missing, with files stored under `.devrun/runtime/localstorage/` so transient localStorage artifacts stay out of managed project repos.
@@ -166,7 +167,6 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `GET /api/logs?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&chars=4000[&lines=500]`
 - `POST /api/snapshot`
 - `WS /ws?projectId=...&serviceName=...[&replay=1|0][&runId=<RUN_ID>]`
-- `WS /ws/client-logs?projectId=...&serviceName=...&runId=...`
 
 ### Project config endpoint
 
@@ -191,43 +191,27 @@ Notes:
 - `services` must contain at least one valid `{ name, cmd }` entry.
 - Service names must be unique (case-insensitive).
 - `defaultService` must match one configured service name.
-- `port`, when set, must be an integer from `1` to `65535`.
-- If command starts with `PORT=<n>`, explicit `port` must match `<n>`.
+- `port`, when set, must be an integer from `1` to `65535` and is used as the preferred starting port.
+- If command starts with `PORT=<n>`, configured `port` must match `<n>`; inline command ports are treated as exact because Devrun cannot rewrite the shell command safely.
 
 ### Run identity
 
 - Running services now expose a `runId` in `GET /api/state` and `/api/snapshot`.
 - Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
 - Runtime snapshots expose `status` (`starting|ready|stopped|error`) and `ready` to avoid log-scraping for readiness.
-- `effectiveUrl` is the verified local app URL when Devrun can confirm one; prefer it over reconstructing a URL manually.
+- `effectiveUrl` is the verified local app URL when Devrun can confirm one; prefer it over reconstructing a URL manually. It uses `localhost` when safe and falls back to a numeric loopback URL only when `localhost` is ambiguous.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
 - `GET /api/logs` supports `chars` (200-50,000) and `lines` (1-500); when `lines` is provided it takes precedence over `chars`.
 - Runtime metadata is currently pipe-only (`terminalMode="pipe"`, `ptyAvailable=false`).
 - `WS /ws` accepts optional `runId` query param to ensure terminal attach targets the expected run.
-- `WS /ws/client-logs` requires `runId` and only accepts logs for the currently active run.
 
 ### Event history (low-noise)
 
 - `GET /api/history` returns per-service event history with retention of the latest `100` events.
-- Event types are: `start`, `stop_requested`, `restart_requested`, `stdin_command`, `exit`, `client_log`.
+- Event types are: `start`, `stop_requested`, `restart_requested`, `stdin_command`, `exit`.
 - `exit` events may include `data.replacedByRestart: true` when the old run is intentionally replaced during restart.
 - Use this for workflow timeline and command context.
 - Keep `GET /api/logs` for verbose service output (stdout/stderr tail).
-
-### Browser client log bridge (dev)
-
-- Managed services started in `NODE_ENV=development` receive bridge env vars:
-  - `NEXT_PUBLIC_DEVRUN_LOG_BRIDGE_ENABLED=1`
-  - `NEXT_PUBLIC_DEVRUN_LOG_BRIDGE_WS_URL`
-  - `NEXT_PUBLIC_DEVRUN_PROJECT_ID`
-  - `NEXT_PUBLIC_DEVRUN_SERVICE_NAME`
-  - `NEXT_PUBLIC_DEVRUN_RUN_ID`
-- Browser apps can forward logs via WS messages:
-  - `{"type":"client_log_batch","entries":[{"level":"debug|log|info|warn|error","ts":"ISO-8601","message":"...","path":"...","source":"console|window_error|unhandledrejection","clientId":"..."}]}`
-- Limits:
-  - max `50` entries/message
-  - max `2000` chars per text field
-  - max `16KB` raw WS payload (oversized messages are ignored)
 
 ### AI polling recipe
 

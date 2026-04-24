@@ -17,7 +17,7 @@ The UI and backend speak through the same local API surface that AI operators ca
 The backend entrypoint composes the app:
 - starts Express and the Next.js request handler
 - exposes REST endpoints such as `/api/state`, `/api/history`, `/api/logs`, and `/api/process/*`
-- exposes WebSocket endpoints for terminal attach and browser log forwarding
+- exposes a WebSocket endpoint for terminal attach
 - seeds a few default local projects on startup
 - auto-seeds a simple `web` service from `package.json` when a project has no saved config yet
 
@@ -35,9 +35,10 @@ If you need to change API contracts, project discovery, or startup seeding behav
 - records owned child processes and can clean up orphans after crashes/restarts
 
 Recent changes also moved port ownership logic here:
-- explicit ports are treated as strict reservations
-- services without an explicit port get a stable Devrun-managed assigned port
-- local app URLs are probed on numeric loopback hosts before `effectiveUrl` is published
+- configured ports are treated as preferred starting points
+- Devrun assigns the first available unreserved port at or above that starting point
+- assigned ports are persisted so stopped services keep their slot
+- local app URLs prefer `localhost`, with numeric loopback probes used internally to detect ambiguous IPv4/IPv6 behavior
 
 If a bug involves readiness, URL detection, port conflicts, logs, or restart behavior, this is usually the primary file.
 
@@ -46,7 +47,7 @@ If a bug involves readiness, URL detection, port conflicts, logs, or restart beh
 The backend stores local state in `.devrun/` through a few small modules:
 - `src/backend/registry.ts`: registered projects
 - `src/backend/config.ts`: saved per-project service config and `defaultService`
-- `src/backend/portReservations.ts`: stable auto-port assignments and explicit-port reservation bookkeeping
+- `src/backend/portReservations.ts`: stable assigned-port bookkeeping
 - `src/backend/historyStore.ts`: low-noise per-service lifecycle history
 - `src/backend/storage.ts`: shared filesystem locations under `.devrun/`
 
@@ -112,7 +113,6 @@ Use these surfaces together:
 - `/api/history`: low-noise timeline
 - `/api/logs`: verbose output
 - `WS /ws`: terminal attach/replay
-- `WS /ws/client-logs`: browser log bridge for supported dev apps
 
 ## Testing And Validation
 

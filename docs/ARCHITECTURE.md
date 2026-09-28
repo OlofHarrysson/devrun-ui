@@ -29,7 +29,7 @@ If you need to change API contracts, project discovery, or startup seeding behav
 - starts, stops, and restarts child processes
 - injects runtime env vars such as `PORT`
 - tracks per-run metadata like `runId`, `status`, `ready`, `warnings`, and `effectiveUrl`
-- captures stdout/stderr into in-memory recent logs
+- captures stdout/stderr into in-memory recent logs and durable per-run log files
 - maintains low-noise lifecycle history
 - manages WebSocket terminal clients
 - records owned child processes and can clean up orphans after crashes/restarts
@@ -59,9 +59,10 @@ These modules keep file I/O simple and synchronous because this is a local-first
 
 This is the main UI orchestration layer. It:
 - loads and refreshes project/runtime state
-- handles add/configure/remove project flows
+- handles project removal; legacy add/configure helpers are not exposed by the workspace
 - wires process actions like start/stop/restart
-- manages terminal connection state
+- manages terminal connection state, theme colors, and ResizeObserver-driven fitting
+- recovers stopped logs after socket disconnect/start-stop races
 - coordinates history polling and selected project/service state
 
 If a UI behavior feels stateful or workflow-related, this hook is the first place to inspect.
@@ -80,11 +81,11 @@ Thin client wrapper around the backend API. Change this when request/response sh
 ### `src/components/*`
 
 UI is split into focused components:
-- sidebar and project selection
-- project header and config actions
+- searchable sidebar and mobile project chooser
+- project header and secondary removal action
 - command bar with service controls and `Open app`
 - terminal panel
-- history panel
+- optional history panel
 
 The UI is intentionally driven by backend state rather than client-side process assumptions.
 
@@ -92,10 +93,10 @@ The UI is intentionally driven by backend state rather than client-side process 
 
 ### Add and configure a project
 
-1. User adds a repo root.
+1. Agent registers a repo root through the API.
 2. Backend registers the project in `.devrun/projects.json`.
 3. Backend may auto-seed one `web` service.
-4. User refines saved services through `POST /api/project-config`.
+4. Agent refines saved services through `POST /api/project-config`.
 
 ### Start a service
 
@@ -111,7 +112,7 @@ The UI is intentionally driven by backend state rather than client-side process 
 Use these surfaces together:
 - `/api/state`: current snapshot
 - `/api/history`: low-noise timeline
-- `/api/logs`: verbose output
+- `/api/logs`: durable verbose output tail plus `logFilePath` when available
 - `WS /ws`: terminal attach/replay
 
 ## Testing And Validation
@@ -119,7 +120,10 @@ Use these surfaces together:
 The repo currently relies on:
 - `scripts/smoke-api.mjs` for API/runtime smoke coverage
 - `tests/*.spec.ts` for Playwright end-to-end behavior
-- `npm run typecheck` for strict TypeScript validation
+- `npm run typecheck` for backend TypeScript and `npm run typecheck:ui` for frontend TypeScript
+- `npm run test:ui` uses an already-running instance for fixture UI checks and a
+  disposable real service lifecycle test; it avoids booting a second shared manager
+- `npm run design:validate` captures desktop/mobile states through the installed Harness
 
 Behavior changes in lifecycle logic should usually be validated through the API layer, not only through UI clicks.
 

@@ -14,7 +14,8 @@
     "design:capture": "node scripts/design.mjs capture",
     "design:review": "node scripts/design.mjs review",
     "design:validate": "node scripts/design.mjs validate",
-    "typecheck:ui": "tsc -p tsconfig.json --noEmit"
+    "typecheck:ui": "tsc -p tsconfig.json --noEmit",
+    "test:ui": "TEST_BASE_URL=${TEST_BASE_URL:-http://localhost:4317} playwright test --config=playwright.ui.config.ts"
   },
   "keywords": [
     "process-manager",

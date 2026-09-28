@@ -1,67 +1,71 @@
+import { useState } from "react";
 import type { ProjectState } from "../types/ui";
 
 interface SidebarProps {
   projects: ProjectState[];
   selectedProjectId: string | null;
-  onAddProject: () => Promise<void>;
   onSelectProject: (project: ProjectState) => Promise<void>;
 }
 
-export function Sidebar({
-  projects,
-  selectedProjectId,
-  onAddProject,
-  onSelectProject,
-}: SidebarProps) {
-  return (
-    <aside className="flex flex-col gap-3 border-b border-base-300 bg-base-100 p-4 md:min-h-screen md:border-r md:border-b-0">
-      <div className="grid gap-2.5">
-        <h1 className="m-0 text-xs font-extrabold uppercase tracking-widest text-primary">
-          Devrun UI
-        </h1>
-        <button
-          id="add-project-btn"
-          className="btn btn-primary btn-sm"
-          onClick={() => {
-            void onAddProject();
-          }}
-        >
-          Add Project
-        </button>
-      </div>
-      <div id="projects" className="grid min-h-0 gap-2 overflow-auto">
-        {!projects.length ? (
-          <div className="alert alert-info alert-soft text-sm">
-            <span>No projects yet.</span>
-          </div>
-        ) : (
-          projects.map((project) => {
-            const runningCount = project.services.filter((service) => service.running).length;
-            const isActive = project.id === selectedProjectId;
+function projectStatus(project: ProjectState) {
+  if (project.configError || project.services.some((service) => service.status === "error")) {
+    return { label: "Needs attention", state: "error" };
+  }
+  const running = project.services.filter((service) => service.running);
+  if (running.some((service) => service.status === "starting" || service.ready === false)) {
+    return { label: "Starting", state: "starting" };
+  }
+  return running.length
+    ? { label: `${running.length} running`, state: "ready" }
+    : { label: "Stopped", state: "stopped" };
+}
 
+export function Sidebar({ projects, selectedProjectId, onSelectProject }: SidebarProps) {
+  const [query, setQuery] = useState("");
+  const search = query.trim().toLowerCase();
+  const visibleProjects = projects.filter((project) => `${project.name} ${project.root}`.toLowerCase().includes(search));
+  const running = projects.filter((project) => project.services.some((service) => service.running)).length;
+
+  return (
+    <aside className="workspace-sidebar" aria-label="Projects">
+      <div className="sidebar-identity">
+        <h1>Devrun<span aria-hidden="true" className="brand-dot" /></h1>
+        <p>{running} active · {projects.length} projects</p>
+      </div>
+      <label className="project-search">
+        <span className="sr-only">Search projects</span>
+        <input type="search" placeholder="Find a project…" value={query} onChange={(event) => setQuery(event.target.value)} />
+      </label>
+      <label className="mobile-project-picker">
+        <span className="sr-only">Choose project</span>
+        <select aria-label="Choose project" value={selectedProjectId || ""} disabled={!projects.length}
+          onChange={(event) => {
+            const project = projects.find((entry) => entry.id === event.target.value);
+            if (project) void onSelectProject(project);
+          }}>
+          {!projects.length && <option value="">No projects yet</option>}
+          {projects.map((project) => <option key={project.id} value={project.id}>{project.name} · {projectStatus(project).label}</option>)}
+        </select>
+      </label>
+      <nav id="projects" className="project-list" aria-label="Project list">
+        {!projects.length ? <p className="sidebar-empty">No projects yet.</p>
+          : !visibleProjects.length ? <p className="sidebar-empty">No matching projects.</p>
+          : visibleProjects.map((project) => {
+            const status = projectStatus(project);
+            const active = project.id === selectedProjectId;
             return (
-              <button
-                key={project.id}
-                className={`project-item btn btn-block grid h-auto min-h-0 grid-cols-[1fr_auto] items-start justify-between gap-2 px-3 py-2 normal-case ${
-                  isActive
-                    ? "active btn-primary text-primary-content"
-                    : "btn-ghost border border-base-300"
-                }`}
-                onClick={() => {
-                  void onSelectProject(project);
-                }}
-              >
-                <div className="project-item-name max-w-[175px] truncate text-left font-bold leading-tight">
-                  {project.name}
-                </div>
-                <div className="project-item-meta badge badge-sm badge-ghost self-center text-xs">
-                  {runningCount}/{project.services.length} running
-                </div>
+              <button key={project.id} type="button" aria-pressed={active}
+                className={`project-item${active ? " active" : ""}`}
+                title={`${project.name}\n${project.root}`}
+                onClick={() => { void onSelectProject(project); }}>
+                <span className="project-item-name">{project.name}</span>
+                <span className="project-item-meta" data-state={status.state}>
+                  <span className="status-dot" aria-hidden="true" />{status.label}
+                </span>
               </button>
             );
-          })
-        )}
-      </div>
+          })}
+      </nav>
     </aside>
   );
 }

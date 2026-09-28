@@ -1,5 +1,4 @@
-/* Palette adapted from madebyolof/src/styles/global.css, 2026-09-28.
-   Scoped to the reference until the workspace redesign is reviewed. */
+/* Approved Devrun palette, adapted from Made by Olof. */
 @font-face {
   font-family: "DM Sans Variable";
   font-style: normal;
@@ -53,7 +52,7 @@
   color: var(--color-ink);
 }
 
-[data-theme="olof"] :is(button, a, select, input):focus-visible {
+[data-theme="olof"] :is(button, a, select, input, summary):focus-visible {
   outline: 2px solid var(--color-action);
   outline-offset: 3px;
 }

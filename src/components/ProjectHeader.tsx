@@ -1,50 +1,36 @@
+import { useRef } from "react";
 import type { ProjectState } from "../types/ui";
 
 interface ProjectHeaderProps {
   selectedProject: ProjectState | null;
-  onConfigureProject: (project: ProjectState) => Promise<void>;
   onRemoveProject: (project: ProjectState) => Promise<void>;
 }
 
-export function ProjectHeader({
-  selectedProject,
-  onConfigureProject,
-  onRemoveProject,
-}: ProjectHeaderProps) {
+export function ProjectHeader({ selectedProject, onRemoveProject }: ProjectHeaderProps) {
+  const menu = useRef<HTMLDetailsElement>(null);
   return (
-    <div
-      id="project-header"
-      className="flex items-center justify-between gap-3 rounded-box border border-base-300 bg-base-100 p-3 shadow-sm md:p-3.5"
-    >
-      {!selectedProject ? (
-        <div className="text-xl leading-tight text-base-content/70">No project selected</div>
-      ) : (
-        <>
-          <div>
-            <h2 className="m-0 text-xl leading-tight">{selectedProject.name}</h2>
-            <div className="mt-1 max-w-full truncate font-mono text-xs text-base-content/70">
-              {selectedProject.root}
-            </div>
+    <div id="project-header" className="project-header">
+      <div className="project-heading">
+        <h2>{selectedProject?.name || "Your local workspace"}</h2>
+        {selectedProject && <p title={selectedProject.root}>{selectedProject.root}</p>}
+      </div>
+      {selectedProject && (
+        <details key={selectedProject.id} ref={menu} className="project-menu"
+          onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && menu.current) {
+              menu.current.open = false;
+              menu.current.querySelector("summary")?.focus();
+            }
+          }}>
+          <summary aria-label="Project actions" title="Project actions">···</summary>
+          <div className="project-menu-items">
+            <button type="button" onClick={() => {
+              if (menu.current) menu.current.open = false;
+              void onRemoveProject(selectedProject);
+            }}>Remove project</button>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              className="btn btn-sm btn-outline"
-              onClick={() => {
-                void onConfigureProject(selectedProject);
-              }}
-            >
-              Configure
-            </button>
-            <button
-              className="btn btn-sm btn-error btn-outline"
-              onClick={() => {
-                void onRemoveProject(selectedProject);
-              }}
-            >
-              Remove
-            </button>
-          </div>
-        </>
+        </details>
       )}
     </div>
   );

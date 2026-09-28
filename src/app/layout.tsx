@@ -1,10 +1,12 @@
 import "../styles/main.css";
+import "../styles/olof-theme.css";
+import "../styles/workspace.css";
 import "@xterm/xterm/css/xterm.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Devrun UI",
+  title: "Devrun",
   description: "Host-native multi-project service runner with shared terminals",
 };
 
@@ -15,7 +17,7 @@ interface RootLayoutProps {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body data-theme="corporate" className="min-h-screen bg-base-200 text-base-content">
+      <body data-theme="olof">
         {children}
       </body>
     </html>

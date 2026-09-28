@@ -1,19 +1,52 @@
-# Initial product and UI review — 28 September 2026
+# Product and UI review — 28 September 2026
 
-## Outcome and scope
+## Delivered workspace
+
+The main page now uses the approved charcoal/orange palette and local DM Sans.
+The desktop sidebar is searchable and scrolls independently. Mobile uses a project
+chooser. Service actions follow lifecycle state; project removal lives in a secondary
+menu. Agents own project registration and configuration through the existing API.
+History is optional, with full command/run/log metadata behind Details. The terminal
+uses shared colors and refits when its container changes.
+
+Verification: the 10-test UI/lifecycle suite passed, plus a focused mobile-history
+keyboard test. Layout coverage includes 33 projects and long paths at 320, 390, 1024,
+and 1440px widths. A temporary real service passed start/stop/restart, run identity,
+history, terminal streaming, and stopped-log recovery; cleanup left no test projects.
+Frontend and backend typechecks passed. The final Harness snapshot has 18 records
+including mobile history replacing output, with no workspace overflow. The live Made
+by Olof service was inspected read-only on desktop and mobile.
+
+Before/after evidence: `artifacts/design/workspace-before/` and
+`artifacts/design/workspace-final/`. Original PNGs were visually inspected. Header/action
+review crops are unscaled derivatives of those originals, located using captured
+geometry and retaining parent-record provenance. Live screenshots are local and ignored.
+
+The real lifecycle check exposed a UI race: a service could stop after the action’s
+immediate state fetch, leaving a disconnected tab after its socket closed. State
+reconciliation now restores stopped status and recent logs for disconnected/connecting
+entries as well as live ones. Backend process logic and API semantics were not changed.
+
+Tradeoffs: history and full metadata require opening a panel. Manual Add/Configure
+controls are intentionally absent; their existing hook helpers remain unused. Original
+pending log-opening UI support was integrated into Details; pre-existing backend work
+was left untouched. No production build or full backend smoke suite was run against
+the shared development instance. Browser checks used Chromium, not physical phones.
+
+## Initial setup scope
 
 Design Harness is installed; `/design` presents the Made by Olof theme through real
 Devrun controls. This pass establishes a review workflow and a concrete next sprint.
-The main workspace is unchanged. Existing uncommitted log-opening, port, and runtime
-changes were inspected and preserved, not included in the design checkpoint.
+The initial setup left the main workspace unchanged. Existing log-opening, port, and
+runtime changes were inspected and preserved.
 
 Inspected the live app on localhost:4317, Made by Olof in a browser, current source,
 and deterministic desktop/mobile captures. The reference source was the local Made
 by Olof checkout and its canonical `DESIGN.md`/`src/styles/global.css`.
 
-## Three priorities
+## Initial findings and decisions
 
-### 1. Make the workspace fit the work — next sprint
+### 1. Make the workspace fit the work — addressed
 
 **Observed:** The live registry has 33 projects. At 1440×900 the document grows to
 about 1612px, stretching the terminal and history with the sidebar. At 390px wide,
@@ -38,7 +71,7 @@ Evidence: `artifacts/design/initial/live-desktop.png`, `live-mobile.png`, and
 `artifacts/design/baseline/workspace-stopped-{desktop,mobile}.{png,json}`.
 Live evidence is intentionally local and ignored; deterministic captures are regenerable.
 
-### 2. Give controls and status a clear hierarchy — with the shell
+### 2. Give controls and status a clear hierarchy — addressed
 
 **Observed:** Add Project, selected project, selected service, and Start share a strong
 accent. Start, Stop, and Restart are all enabled regardless of lifecycle. Remove is
@@ -55,7 +88,7 @@ Keep errors visible. Unify the xterm palette with the surrounding canvas.
 **Tradeoff:** Less metadata at a glance; inspect-details and Open log must remain easy
 to reach. A dark theme alone does not resolve the action hierarchy.
 
-**Already done:** Scoped theme and font adoption in `/design`, real component demo,
+**Initial setup:** Scoped theme and font adoption in `/design`, real component demo,
 current/theme selector, safe start/stop/restart/reset, and clear focus. Visual review
 caught and corrected low-contrast secondary outline buttons and neutral soft badges.
 The theme retains the source’s main hues and adapts roles for Devrun controls.
@@ -65,21 +98,21 @@ The theme retains the source’s main hues and adapts roles for Devrun controls.
 Olof configures services through AI agents using the API and is the primary user.
 The human interface should prioritize observing, running, opening, and removing
 projects. Do not build the previously proposed configuration form. Keep Remove in
-a secondary menu and preserve API configuration. Whether to remove the existing
-manual Configure action can be settled with the workspace redesign; it is not central.
+a secondary menu and preserve API configuration. The workspace removes the
+manual Configure action; it is not central.
 
 ## Palette follow-up
 
-The reference now proposes five everyday colors (canvas, surface, primary text,
+The approved palette uses five everyday colors (canvas, surface, primary text,
 secondary text, orange) plus green/red for success/error states. Body and secondary
 text share one neutral; border/hover shades are derived, warnings reuse orange, and
-text on orange uses canvas. Starting should be neutral in the workspace redesign.
-This is a review proposal; existing main-workspace styling is unchanged.
+text on orange uses canvas. Starting uses neutral text in the workspace.
+Olof approved the proposal, which is now applied to the main workspace.
 Compared `palette-before` and `palette-after` captures at desktop/mobile sizes,
 checked the original PNGs, validated the comparison controls, and passed frontend
 TypeScript checks. The body/secondary text merge makes body copy slightly quieter.
 
-## Repository assessment
+## Initial repository assessment
 
 - Next.js App Router, React 19, Tailwind 4, daisyUI 5, Zustand, and xterm already give
   the project sufficient UI foundations. Reuse components and add the custom theme.
@@ -97,7 +130,7 @@ TypeScript checks. The body/secondary text merge makes body copy slightly quiete
   separate navy background/font. Resolve those in the theme rollout, not by importing
   the portfolio stylesheet wholesale.
 
-## Suggested acceptance for the next sprint
+## Workspace acceptance criteria
 
 At desktop/laptop/mobile widths, show the selected service and its main action without
 horizontal overflow; keep long names and paths readable through disclosure. Test a
@@ -105,7 +138,9 @@ horizontal overflow; keep long names and paths readable through disclosure. Test
 Verify service switching, Open app, logs, history, and keyboard navigation. Present
 matching before/after full-page and detail captures. Do not change process APIs.
 
-## Validation and limits
+## Initial setup validation and limits
+
+The delivered workspace validation above supersedes this initial coverage.
 
 - Frontend and backend TypeScript checks passed.
 - Twelve named captures per successful run: desktop/mobile workspace stopped, empty,
@@ -128,3 +163,7 @@ The useful first result is structural evidence: a large real registry exposes pr
 that a short fixture can miss. Carry a 33-project stress state into the workspace
 redesign. Shared theme values still need product-specific role checks. No global
 methodology or personalization changes are warranted by this pass.
+
+The implementation also showed why lifecycle validation needs a real service: fixture
+states did not expose the socket-close/state-poll race. Retain the isolated lifecycle
+check alongside responsive fixtures for future UI work.

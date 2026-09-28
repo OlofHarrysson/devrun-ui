@@ -28,6 +28,7 @@ export interface ProjectServiceState {
   ready?: boolean;
   runId?: string;
   lastRunId?: string;
+  logFilePath?: string;
 }
 
 export interface ProjectState {
@@ -70,6 +71,12 @@ export interface HistoryEntry {
 export interface LogsResponse {
   output?: string;
   runId?: string;
+  logFilePath?: string;
+}
+
+export interface OpenLogResponse {
+  ok?: boolean;
+  logFilePath?: string;
 }
 
 export interface ProcessActionResponse {

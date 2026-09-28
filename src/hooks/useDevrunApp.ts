@@ -47,6 +47,7 @@ export interface DevrunAppModel {
   configureProject: (project: ProjectState) => Promise<void>;
   removeProject: (project: ProjectState) => Promise<void>;
   selectProject: (project: ProjectState, preferredServiceName?: string) => Promise<void>;
+  openServiceLog: (project: ProjectState, service: ProjectServiceState) => Promise<void>;
   onAction: (
     action: ProcessAction,
     project: ProjectState,
@@ -96,6 +97,7 @@ export function useDevrunApp(): DevrunAppModel {
   const pollHandleRef = useRef<number | null>(null);
   const terminalsRef = useRef<Map<string, TerminalEntry>>(new Map());
   const xtermModulesRef = useRef<Promise<XtermModules> | null>(null);
+  const resizeObserversRef = useRef(new Map<string, ResizeObserver>());
 
   const selectedProject = useMemo(
     () => getProject(projects, selectedProjectId),
@@ -227,13 +229,18 @@ export function useDevrunApp(): DevrunAppModel {
       return Boolean(entry.term);
     }
 
+    const colors = getComputedStyle(entry.container);
+    const themeColor = (name: string) => colors.getPropertyValue(name).trim();
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "JetBrains Mono, Menlo, monospace",
+      fontFamily: "SFMono-Regular, Consolas, Liberation Mono, monospace",
       convertEol: true,
       theme: {
-        background: "#0b1020",
+        background: themeColor("--color-canvas"),
+        foreground: themeColor("--color-ink"),
+        cursor: themeColor("--color-action"),
+        selectionBackground: themeColor("--color-surface"),
       },
     });
 
@@ -260,12 +267,16 @@ export function useDevrunApp(): DevrunAppModel {
       if (!terminalsRef.current.has(entry.key) || !entry.fitAddon) {
         return;
       }
+      if (!entry.container?.clientWidth || !entry.container.clientHeight) return;
       entry.fitAddon.fit();
       sendResize(entry);
     };
 
     window.addEventListener("resize", onWindowResize);
     entry.onWindowResize = onWindowResize;
+    const observer = new ResizeObserver(onWindowResize);
+    observer.observe(entry.container);
+    resizeObserversRef.current.set(entry.key, observer);
 
     return true;
   }
@@ -508,8 +519,12 @@ export function useDevrunApp(): DevrunAppModel {
         entry.lastKnownRunId = service.lastRunId;
       }
 
-      if (!service.running && entry.connectionState === "live") {
+      if (!service.running && entry.connectionState !== "stopped") {
         markDisconnected(entry, "service stopped", "stopped");
+        void loadRecentLogs(entry, entry.projectId, service.name, {
+          showBanner: true,
+          runId: service.lastRunId || entry.lastKnownRunId,
+        });
       }
     }
   }
@@ -740,6 +755,18 @@ export function useDevrunApp(): DevrunAppModel {
       }
     } catch (error) {
       window.alert(error instanceof Error ? error.message : `Failed to ${action} service`);
+    }
+  }
+
+  async function openServiceLog(
+    project: ProjectState,
+    service: ProjectServiceState,
+  ): Promise<void> {
+    try {
+      const runId = service.runId || service.lastRunId || undefined;
+      await devrunApi.openLog(project.id, service.name, runId);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to open log file");
     }
   }
 
@@ -1000,6 +1027,8 @@ export function useDevrunApp(): DevrunAppModel {
         }
         entry.term?.dispose();
       }
+      for (const observer of resizeObserversRef.current.values()) observer.disconnect();
+      resizeObserversRef.current.clear();
       terminalsRef.current.clear();
       resetState();
     };
@@ -1025,7 +1054,7 @@ export function useDevrunApp(): DevrunAppModel {
       return "Select a project to open a terminal.";
     }
     if (selectedProject.configError || !selectedProject.services.length) {
-      return "Configure a service to open a terminal.";
+      return "Output will appear here once your agent configures a service.";
     }
     return "";
   }, [selectedProject]);
@@ -1051,6 +1080,7 @@ export function useDevrunApp(): DevrunAppModel {
     configureProject,
     removeProject,
     selectProject,
+    openServiceLog,
     onAction,
     attachTerminalContainer,
   };

@@ -35,7 +35,7 @@ type HistoryResponse = {
 
 const PROJECT_NAME = `devrun-e2e-ui-${Date.now()}`;
 const SERVICE_NAME = "echo";
-const BASE_URL = "http://localhost:4421";
+const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:4421";
 
 let projectRoot = "";
 let projectId = "";
@@ -139,6 +139,7 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
 
   await expect(page.locator("#command-bar")).toBeVisible();
   const historyPanel = page.locator("#history-panel");
+  await page.locator("#history-toggle").click();
   await expect(historyPanel).toBeVisible();
   await page.locator("#cmd-start-btn").click();
 
@@ -152,6 +153,8 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
   await expect(tabStatus).toHaveText("live", { timeout: 15_000 });
   await expect(historyPanel).toContainText("start", { timeout: 15_000 });
 
+  await expect(page.locator(".terminal-view:not(.hidden)")).toContainText("ready");
+
   const serviceRunning = await getServiceState();
   expect(serviceRunning.running).toBeTruthy();
   const initialRunId = serviceRunning.runId;
@@ -163,9 +166,12 @@ test("terminal reconnect + stopped logs behavior", async ({ page }) => {
 
   await projectItem.click();
   await expect(tabStatus).toHaveText("stopped (logs)", { timeout: 15_000 });
+  await expect(page.locator(".terminal-view:not(.hidden)")).toContainText("showing recent logs for stopped service");
 
   await expect(serviceTab).toHaveCount(1);
 
+  await page.locator("#cmd-start-btn").click();
+  await expect(tabStatus).toHaveText("live", { timeout: 15_000 });
   await page.locator("#cmd-restart-btn").click();
   await expect(serviceTab).toHaveCount(1);
   await expect(tabStatus).toHaveText("live", { timeout: 15_000 });

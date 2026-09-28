@@ -27,7 +27,7 @@ It gives both humans and AI agents the same shared runtime surface:
 - Registers multiple local projects by path
 - Stores per-project service config inside Devrun instead of per-repo YAML
 - Starts, stops, and restarts named services from one UI
-- Opens one terminal tab per service and reuses recent logs for stopped services
+- Opens one terminal tab per service and writes durable per-run log files
 - Keeps a low-noise lifecycle history alongside verbose terminal output
 - Exposes state/history/log/process APIs for AI tooling
 - Publishes structured runtime metadata such as `status`, `ready`, `warnings`, `port`, and `effectiveUrl`
@@ -83,21 +83,21 @@ npm run dev
 
 [http://localhost:4317](http://localhost:4317)
 
-## First-Time UI Flow
+## Everyday workflow
 
-1. Click `Add Project` and enter the repo root path.
-2. Select the project and click `Configure`.
-3. Define one or more services:
-   - `name`
-   - `cmd`
-   - optional `cwd`
-   - optional `port`
-4. Pick a `defaultService`.
-5. Click `Start` on the service you want to run.
-6. Use `Open app` when Devrun surfaces a verified `effectiveUrl`.
-7. Use the terminal and history panels to understand what happened.
+Ask your AI agent to register projects and configure services through the API.
+The UI is for observing and controlling that shared runtime:
 
-Devrun may auto-seed one `web` service from `package.json` (`npm run dev` or `npm run start`) for fast first-run setup, but you should use `Configure` when the inferred service is wrong or incomplete.
+1. Find a project with sidebar search, or use the project chooser on mobile.
+2. Select its service tab. Start is shown for stopped services; Restart and Stop
+   are available while running. Open app appears when the service is ready with a verified URL.
+3. Read live output or recent stopped logs in the terminal.
+4. Toggle History for the lifecycle timeline. Details exposes commands, directories,
+   ports, run identity, and Open log when a durable file is available.
+5. Use the project actions menu to remove a project after confirmation.
+
+Project registration and configuration remain API operations. See the operator
+recipes below. The UI intentionally has no manual Add/Configure form.
 
 ## UI stack
 
@@ -109,9 +109,11 @@ Devrun may auto-seed one `web` service from `package.json` (`npm run dev` or `np
 - App logic split into typed hooks/components (`src/hooks`, `src/components`, `src/lib`)
 - Shared UI types in `src/types/ui.ts`
 - Runtime/backend code grouped under `src/backend`
-- Single global stylesheet: `src/styles/main.css` (base/theme/fonts only)
-- Component styling is done in Tailwind/daisy class names in `src/components/*.tsx`.
-- Active daisy theme: `corporate`.
+- Tailwind/daisy primitives in `src/styles/main.css`
+- Approved palette and local DM Sans in `src/styles/olof-theme.css`
+- Responsive workspace and component styling in `src/styles/workspace.css`
+- Desktop uses a bounded workspace with independently scrolling projects/output; mobile uses a project chooser.
+- [Design intent](DESIGN.md), [capture workflow](docs/design-harness.md), and development reference at `/design`.
 
 ## Project config (simple mode)
 
@@ -122,7 +124,7 @@ Devrun may auto-seed one `web` service from `package.json` (`npm run dev` or `np
 - On project add/startup, Devrun tries to auto-seed one `web` service from `package.json`:
   - `npm run dev` if a `dev` script exists
   - otherwise `npm run start` if a `start` script exists
-- You can override that seed via the `Configure` button in the UI or `POST /api/project-config`.
+- Agents override that seed through `POST /api/project-config`.
 - Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
 - Devrun injects the assigned `PORT=<port>` before launch.
 - A configured `port` is a preferred starting point, not a hard reservation; if it is occupied or reserved, Devrun walks upward to the next available port.
@@ -165,6 +167,7 @@ On startup, Devrun attempts to add these projects automatically (if they exist o
 - `POST /api/process/cleanup-orphans`
 - `GET /api/history?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&afterSeq=0&limit=25`
 - `GET /api/logs?projectId=...|projectPath=...|cwd=...&serviceName=<optional>&chars=4000[&lines=500]`
+- `POST /api/logs/open`
 - `POST /api/snapshot`
 - `WS /ws?projectId=...&serviceName=...[&replay=1|0][&runId=<RUN_ID>]`
 
@@ -200,8 +203,11 @@ Notes:
 - Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
 - Runtime snapshots expose `status` (`starting|ready|stopped|error`) and `ready` to avoid log-scraping for readiness.
 - `effectiveUrl` is the verified local app URL when Devrun can confirm one; prefer it over reconstructing a URL manually. It uses `localhost` when safe and falls back to a numeric loopback URL only when `localhost` is ambiguous.
+- New service runs write durable logs under `.devrun/runtime/logs/<projectId>/<serviceName>/<runId>.log`.
+- `GET /api/state` and `GET /api/logs` include `logFilePath` when a durable log exists for the current or latest run.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
 - `GET /api/logs` supports `chars` (200-50,000) and `lines` (1-500); when `lines` is provided it takes precedence over `chars`.
+- `POST /api/logs/open` opens the current or requested run log file with the host OS default app.
 - Runtime metadata is currently pipe-only (`terminalMode="pipe"`, `ptyAvailable=false`).
 - `WS /ws` accepts optional `runId` query param to ensure terminal attach targets the expected run.
 
@@ -275,6 +281,20 @@ curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-loop
 - Recommended usage in agent prompts: `Use $shared-terminal-hub-operator`.
 
 ## Testing
+
+For UI work against an already-running development instance:
+
+```bash
+npm run typecheck:ui
+npm run test:ui
+npm run design:validate
+```
+
+`test:ui` includes mocked workspace checks and an isolated temporary service for
+real start/stop/restart validation; it removes its service afterward. Set
+`TEST_BASE_URL` when the verified instance is not on port 4317. It does not start
+a second process manager.
+
 
 - Fast API smoke test (recommended during iteration):
 

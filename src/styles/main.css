@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @plugin "daisyui" {
   themes: corporate --default;
@@ -9,17 +8,6 @@
 @source "../components/**/*.{js,jsx,ts,tsx}";
 
 @layer base {
-  body {
-    margin: 0;
-    font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
-    background:
-      radial-gradient(circle at 8% 8%, color-mix(in oklab, hsl(var(--p)) 18%, transparent) 0%, transparent 38%),
-      radial-gradient(circle at 88% 0%, color-mix(in oklab, hsl(var(--s)) 16%, transparent) 0%, transparent 36%),
-      hsl(var(--b2));
-  }
-
-  code,
-  pre {
-    font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
-  }
+  body { margin: 0; }
+  code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 }

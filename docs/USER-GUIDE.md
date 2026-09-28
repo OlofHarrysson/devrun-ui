@@ -36,7 +36,7 @@ The default service is the one Devrun uses when an API call omits `serviceName`.
 ### History vs Logs
 
 - History is the low-noise lifecycle timeline: starts, stops, restarts, exits, and stdin commands.
-- Logs are the verbose terminal output from the running or most recent service run.
+- Logs are durable verbose terminal output from each service run.
 
 ### Port
 
@@ -72,62 +72,46 @@ npm run dev
 
 [http://localhost:4317](http://localhost:4317)
 
-## First-Time UI Flow
+## Everyday use
 
-### 1. Add a project
+### Set up through your agent
 
-Click `Add Project`.
+Ask your AI agent to register the project and configure its services in Devrun.
+Agents use `POST /api/projects` (or path-first start) and `POST /api/project-config`.
+Registration may seed a `web` service from `package.json`; the agent checks that the
+command, working directory, and port are correct. Manual configuration is not part
+of the workspace UI.
 
-Devrun asks for:
-- project root path
-- optional display name
+### Find a project and service
 
-If the repo has a `package.json` with `dev` or `start`, Devrun may auto-seed one `web` service for you.
+Search project names or paths in the sidebar, then select a service tab.
+On mobile, use the project chooser at the top. The sidebar scrolls independently
+so larger registries do not push the terminal off screen.
 
-### 2. Configure services
+### Run and open
 
-Select the project and click `Configure`.
+Use Start when stopped. While running, Restart and Stop are available, including
+Stop during startup. Open app appears when the service is ready and has a verified
+URL. Actions are disabled while their request is pending.
 
-Devrun asks for:
-- display name
-- service name
-- service command
-- optional working directory
-- optional port
-- whether to add another service
-- default service name
+The lifecycle label describes the process; the service tab describes its terminal
+connection. A live connection alone does not mean the application is ready.
 
-For many repos, the smallest useful setup is just:
+### Read output and history
 
-```text
-Service name: web
-Command: npm run dev
-Working directory: .
-Port: optional preferred starting port, for example `3000` for a web app or `8080` for an API
-```
+The terminal shows live output or recent stopped logs. Toggle History to inspect
+starts, stops, restarts, and exits. On desktop it sits beside output; on mobile it
+covers output until closed. The terminal resizes when the available space changes.
 
-### 3. Start a service
+Details exposes the full command, working directory, preferred port, run identity,
+and log path. Use Open log there to inspect the full run log in your editor/default
+app when a durable log is available. Individual history events expose run IDs under
+Run details.
 
-Select the service and click `Start`.
+### Remove a project
 
-Devrun will:
-- launch the command
-- open a terminal tab for that service
-- start recording history for that run
-- surface runtime metadata such as `status`, `ready`, `port`, and `effectiveUrl`
-
-### 4. Open the app
-
-If the service is a web app and Devrun can verify its URL, the command bar shows `Open app`.
-
-Use that button instead of manually typing a URL.
-
-### 5. Inspect behavior
-
-Use:
-- the service tabs to switch between services
-- the terminal panel for live output or recent stopped logs
-- the history panel for start/stop/restart/exit context
+Open the project actions menu (`···`) and choose Remove project, then confirm.
+The existing API removal behavior still applies; configuration remains agent-led.
 
 ## How Devrun Chooses Ports
 
@@ -145,46 +129,6 @@ That reservation stays stable across stop/start cycles, so:
 - service A can stop
 - service B can start
 - service A can start later without unexpectedly colliding with B
-
-## What the UI Tells You
-
-### Sidebar
-
-Shows:
-- registered projects
-- which project is selected
-- how many services are running in each project
-
-### Project Header
-
-Shows:
-- project name
-- project root path
-- `Configure` and `Remove` actions
-
-### Command Bar
-
-Shows:
-- selected service name
-- lifecycle status
-- configured command
-- current port
-- `Open app` when available
-- `Start`, `Stop`, and `Restart`
-
-### Terminal Panel
-
-Shows:
-- one tab per service in the selected project
-- the connection state for each tab
-- the active terminal output
-- recent logs for stopped services
-
-### History Panel
-
-Shows:
-- lifecycle events for the selected service
-- low-noise operational context without requiring log scraping
 
 ## AI and Automation Use
 
@@ -205,7 +149,8 @@ Use `POST /api/project-config` to change saved services and `defaultService`.
 
 The auto-seeded `web` service may be wrong for that repo.
 
-Fix it with `Configure` and set the real command, `cwd`, and optional port.
+Ask your agent to update the real command, `cwd`, and optional port through
+`POST /api/project-config`.
 
 ### Start fails with a port error
 

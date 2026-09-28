@@ -41,7 +41,7 @@ export function DesignReference() {
           <h1>A quieter place<br />to keep things running.</h1>
           <p>The Made by Olof theme, adapted for a daily development tool. Charcoal surfaces, clear type, and warm orange where an action matters.</p>
           <a href="/" className="btn btn-primary">Open workspace</a>
-          <span className="reference-note">Design study · main workspace unchanged</span>
+          <span className="reference-note">Design reference · shared with the workspace</span>
         </section>
 
         <section id="foundations" aria-labelledby="theme-heading">
@@ -58,7 +58,7 @@ export function DesignReference() {
             ))}
             <span>Green and red only when status needs them. Always pair color with a label.</span>
           </div>
-          <p className="reference-note">Borders and hover shades come from these colors. Warnings can reuse orange; starting and stopped states stay neutral. Proposed palette for review.</p>
+          <p className="reference-note">Borders and hover shades come from these colors. Warnings can reuse orange; starting and stopped states stay neutral. Approved palette.</p>
           <div className="type-samples">
             <div><h3>Made for the work.</h3><p>DM Sans for navigation, controls, and readable status.</p></div>
             <div><code>npm run dev<br /><span>Ready on localhost:3000</span></code><p>System monospace for commands and logs.</p></div>
@@ -67,9 +67,9 @@ export function DesignReference() {
 
         <section id="components" aria-labelledby="components-heading">
           <div className="section-heading"><h2 id="components-heading">Real controls, safe to try</h2>
-            <label>Component theme <select aria-label="Component theme" className="select select-sm" value={theme} onChange={(event) => setTheme(event.target.value)}><option value="olof">Made by Olof</option><option value="corporate">Current</option></select></label>
+            <label>Component theme <select aria-label="Component theme" className="select select-sm" value={theme} onChange={(event) => setTheme(event.target.value)}><option value="olof">Made by Olof</option><option value="corporate">Legacy light</option></select></label>
           </div>
-          <p>These are the workspace’s CommandBar and HistoryPanel. Start, stop, and restart change only this local sample. Their current layout is preserved to expose what still needs redesigning.</p>
+          <p>These are the workspace’s CommandBar and HistoryPanel. Start, stop, and restart change only this local sample. Their layout and theme are shared with the main workspace.</p>
           <div id="component-demo" data-theme={theme}>
             <CommandBar selectedProject={project} selectedService={service}
               {...{ onOpenLog: async () => { setMessage("Demo: no log file is opened."); } }}
@@ -87,7 +87,7 @@ export function DesignReference() {
         </section>
 
         <section id="direction" aria-labelledby="direction-heading">
-          <h2 id="direction-heading">The next workspace</h2>
+          <h2 id="direction-heading">The workspace</h2>
           <p>Keep project → service → output as the core flow. Make the terminal the visual center and reveal deeper detail when it is useful. Agents set things up; this is where you see what is running and take control.</p>
           <ol className="direction-list">
             <li><strong>Find the project. See what needs attention.</strong><span>Quiet project rows, clear selection, search for larger lists, and status that separates ready from starting or failed.</span></li>

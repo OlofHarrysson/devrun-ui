@@ -1,6 +1,7 @@
 import type {
   HistoryResponse,
   LogsResponse,
+  OpenLogResponse,
   ProcessAction,
   ProcessActionResponse,
   ProjectServiceConfigInput,
@@ -104,6 +105,22 @@ export const devrunApi = {
     }
 
     return request<LogsResponse>(`/api/logs?${query.toString()}`, undefined, "Failed to fetch logs");
+  },
+
+  openLog(
+    projectId: string,
+    serviceName: string,
+    runId?: string,
+  ): Promise<OpenLogResponse> {
+    return request<OpenLogResponse>(
+      "/api/logs/open",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, serviceName, runId }),
+      },
+      "Failed to open log file",
+    );
   },
 
   history(

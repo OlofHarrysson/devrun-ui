@@ -62,12 +62,12 @@ async function capture(name) {
           await page.keyboard.press("Enter");
           await page.getByRole("status").filter({ hasText: "Demo: web ready" }).waitFor();
           assert.equal(await page.locator("#command-bar .badge-success").innerText(), "ready");
-          await page.locator("#cmd-stop-btn").click();
-          await page.getByRole("status").filter({ hasText: "Demo: web stopped" }).waitFor();
           await page.locator("#cmd-restart-btn").click();
           await page.getByRole("status").filter({ hasText: "Demo: web ready" }).waitFor();
+          await page.locator("#cmd-stop-btn").click();
+          await page.getByRole("status").filter({ hasText: "Demo: web stopped" }).waitFor();
           await page.getByRole("button", { name: "Reset demo" }).click();
-        } else if (state === "empty") await page.getByText("No projects yet.", { exact: true }).waitFor();
+        } else if (state === "empty") await page.getByText("Bring your projects here.", { exact: true }).waitFor();
         else if (state === "configuration-error") await page.getByText("Project not configured", { exact: true }).waitFor();
         else {
           await page.locator("#cmd-start-btn").waitFor();
@@ -83,11 +83,14 @@ async function capture(name) {
         const scope = state === "reference" ? {
           id: target, root: "main", regions: [{ id: "intro", selector: ".reference-intro" }, { id: "components", selector: "#components" }],
         } : {
-          id: target, root: "body", regions: [{ id: "projects", selector: "#projects" }, { id: "header", selector: "#project-header" }, { id: "actions", selector: "#command-bar" }, { id: "terminal", selector: "#terminal-stack" }, { id: "history", selector: "#history-panel" }],
+          id: target, root: "body", regions: [{ id: "projects", selector: "#projects", allowHidden: true }, { id: "header", selector: "#project-header" }, { id: "actions", selector: "#command-bar" }, { id: "terminal", selector: "#terminal-stack" }, { id: "history", selector: "#history-panel", allowHidden: true }],
         };
         async function save(captureTarget, crop) {
           const basePath = path.join(directory, `${captureTarget}-${state}-${viewport}`);
-          const observation = await measurePage(page, scope);
+          const measuredScope = { ...scope, regions: scope.regions.map((region) =>
+            region.id === "terminal" && captureTarget === "workspace-history" && viewport === "mobile"
+              ? { ...region, allowHidden: true } : region) };
+          const observation = await measurePage(page, measuredScope);
           const record = await writeEvidence(page, { basePath, observation, crop,
             identity: { target: captureTarget, state, viewport }, sourceRoot: root,
             details: { data: "deterministic fixtures; no live process controls", baseURL },
@@ -97,10 +100,14 @@ async function capture(name) {
           assert.deepEqual(errors, []);
           records[`${captureTarget}/${state}/${viewport}`] = path.relative(directory, `${basePath}.json`);
           findings.push({ target: captureTarget, state, viewport, horizontalOverflow: observation.diagnostics.horizontalOverflow, page: observation.diagnostics.page });
-          // Existing workspace overflow is audit evidence. New reference must fit.
-          if (state === "reference") assert.equal(observation.diagnostics.horizontalOverflow, 0, "Reference must fit viewport");
+          assert.equal(observation.diagnostics.horizontalOverflow, 0, "Page must fit viewport");
+          if (state !== "reference") assert.ok(observation.diagnostics.page.height <= size.height + 1, "Workspace must fit viewport height");
         }
         await save(target);
+        if (state !== "reference") {
+          await page.locator("#history-toggle").click();
+          await save("workspace-history");
+        }
         if (state === "reference") {
           await page.locator("#components").scrollIntoViewIfNeeded();
           await save("controls", "#components");

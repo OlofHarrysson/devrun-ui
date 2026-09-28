@@ -33,11 +33,12 @@ is allowed through. The reference imports real components but has no network eff
 No live process reliability is claimed by these checks.
 
 The adapter captures stopped, empty, and configuration-error workspace states,
-plus the theme reference and controls under both themes, at 1440×900 and 390×844.
+plus history open, the theme reference and controls under both themes, at 1440×900 and 390×844.
 It checks demo start/stop/restart/reset, browser errors, and reference overflow.
-Existing workspace overflow is recorded as an audit finding, not a passing
-responsive-layout assertion. Ready/starting/error lifecycle and a live streaming
-terminal remain future fixture coverage.
+Workspace width and height must fit the viewport; the reference must have no
+horizontal overflow. `npm run test:ui` additionally checks 33-project lists, long
+paths, 320/390/1024/1440px widths, lifecycle actions, history resizing, removal, and
+service switching. Its temporary real service validates streaming/start/stop/restart.
 
 ## Artifacts
 

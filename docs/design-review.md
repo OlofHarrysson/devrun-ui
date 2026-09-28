@@ -58,20 +58,26 @@ to reach. A dark theme alone does not resolve the action hierarchy.
 **Already done:** Scoped theme and font adoption in `/design`, real component demo,
 current/theme selector, safe start/stop/restart/reset, and clear focus. Visual review
 caught and corrected low-contrast secondary outline buttons and neutral soft badges.
-The theme preserves exact source palette values but adapts roles for Devrun controls.
+The theme retains the source’s main hues and adapts roles for Devrun controls.
 
-### 3. Make configuration one understandable operation — following sprint
+### 3. Keep configuration agent-led — founder direction
 
-**Observed in source:** `useDevrunApp.ts` configures projects with sequential browser
-prompts for display name, service name, command, cwd, port, additional services, and
-default service. Errors use alerts. Users cannot review all settings together.
+Olof configures services through AI agents using the API and is the primary user.
+The human interface should prioritize observing, running, opening, and removing
+projects. Do not build the previously proposed configuration form. Keep Remove in
+a secondary menu and preserve API configuration. Whether to remove the existing
+manual Configure action can be settled with the workspace redesign; it is not central.
 
-**Recommendation:** One project configuration dialog or sheet with editable service
-rows, inline validation, default-service selection, Cancel, and Save. Reuse the current
-API and validation semantics. Improve first-run guidance in the same flow.
+## Palette follow-up
 
-**Tradeoff:** This is a behavior change with more validation work than theme adoption;
-keep it separate from the first layout sprint.
+The reference now proposes five everyday colors (canvas, surface, primary text,
+secondary text, orange) plus green/red for success/error states. Body and secondary
+text share one neutral; border/hover shades are derived, warnings reuse orange, and
+text on orange uses canvas. Starting should be neutral in the workspace redesign.
+This is a review proposal; existing main-workspace styling is unchanged.
+Compared `palette-before` and `palette-after` captures at desktop/mobile sizes,
+checked the original PNGs, validated the comparison controls, and passed frontend
+TypeScript checks. The body/secondary text merge makes body copy slightly quieter.
 
 ## Repository assessment
 
@@ -81,7 +87,7 @@ keep it separate from the first layout sprint.
   URLs. The design should make those existing capabilities easier to understand.
 - Five main presentation components give the layout change a clear boundary. The
   app hook is 1071 lines and combines selection, terminal lifecycle, and prompt forms;
-  extract configuration only when changing that flow, rather than broad refactoring.
+  leave configuration alone while changing the layout rather than broadly refactoring it.
 - `npm run typecheck` checked only backend TypeScript. Added `typecheck:ui` so future
   design work can explicitly check the frontend without triggering a build.
 - Existing process-reliability tests remain separate. The design adapter mocks data

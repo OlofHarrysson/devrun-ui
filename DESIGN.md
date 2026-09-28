@@ -5,13 +5,16 @@
 A calm local workspace for finding a project, running a service, and understanding
 its output. Preserve the project → service → terminal flow and the shared human/AI
 runtime contract. Prioritize scanability and useful status over dashboard decoration.
+Olof is the primary user. Agents register and configure services through the API;
+the human UI is for observing, running, opening, and removing projects. A manual
+configuration form is not a product priority. Keep the API configuration contract.
 
 ## Direction and ownership
 
 [Made by Olof](https://www.madebyolof.com) is the selected **directional** reference
 for charcoal surfaces, neutral text, warm gold-orange actions, DM Sans, and restrained
-surface treatment. The palette is copied exactly from its local
-`src/styles/global.css` on 2026-09-28; Devrun owns its adapted copy in
+surface treatment. The palette is adapted from its local
+`src/styles/global.css`; Devrun owns its copy in
 [`src/styles/olof-theme.css`](src/styles/olof-theme.css).
 Do not carry over the personal portrait, Lora wordmark, hero animation, marketing
 scale, or narrow editorial layout. Commands and output retain monospace type.
@@ -22,6 +25,16 @@ The theme currently applies only to the development reference at
 the structural redesign is reviewed. This is an initial theme study, not an accepted
 final workspace design. The reference is unavailable in production and has no API
 or process effects. Its Start/Stop/Restart controls simulate state locally.
+
+## Palette proposal
+
+Five everyday colors: canvas `#101114`, surface `#1c1e23`, primary text `#f2f3f5`,
+secondary text `#a1a7b0`, and orange `#f6b743`. Green `#9ad5bd` and red `#efaaa3`
+are reserved for meaningful success/error states. Derive divider and hover shades
+from these colors; use canvas for text on orange. Body and secondary copy share one
+text color. A warning may reuse orange; starting is informational and should be
+neutral in the redesigned workspace. Keep explicit status text, never color alone.
+This simplified version is a review proposal in `/design`, not a main-workspace rollout.
 
 ## Surface specifications
 
@@ -42,7 +55,8 @@ or process effects. Its Start/Stop/Restart controls simulate state locally.
 - Use quiet project rows, readable names, search, and explicit ready/starting/error status.
 - Combine project identity and service actions into one compact workspace header.
 - Make Start primary when stopped; promote Open app when ready with a verified URL.
-- Move Remove into a project menu and make history optional; retain visible failures.
+- Keep Remove available in a project menu. Configuration belongs to agents via the API;
+  do not build a manual configuration form. Make history optional; retain visible failures.
 - On phones, use a project chooser above the service view rather than placing every project before output.
 - Apply the Olof theme and unify terminal colors only after capturing a matching baseline.
 - Preserve service switching, logs, history, run identity, and all runtime API semantics.

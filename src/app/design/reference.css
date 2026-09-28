@@ -40,3 +40,9 @@
   .design-reference #component-demo { padding: 8px; }
   .design-reference .reference-intro .reference-note { margin-left: 0; display: block; }
 }
+
+.design-reference .status-palette { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; margin-top: 28px; font-size: 13px; }
+.design-reference .status-palette > div { display: flex; align-items: center; gap: 8px; }
+.design-reference .status-palette strong { font-weight: 500; }
+.design-reference .status-palette > span { color: var(--color-muted); }
+.design-reference .status-swatch { width: 10px; height: 10px; border-radius: 50%; }

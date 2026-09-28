@@ -1,5 +1,14 @@
 # Product and UI review — 28 September 2026
 
+## Product direction after daily-use review
+
+Olof reports that Devrun primarily serves his agents in the background. His UI visits
+are mostly for stopping accumulated services and cleaning up projects, with occasional
+manual starts and little direct log reading. The next priority is the proposed recent
+project/running-service overview in [DESIGN.md](../DESIGN.md#dr-overview--proposed-not-implemented).
+[VISION.md](VISION.md) owns these current priorities. The delivered terminal workspace
+below remains useful for inspection; it is not the intended primary landing workflow.
+
 ## Delivered workspace
 
 The main page now uses the approved charcoal/orange palette and local DM Sans.

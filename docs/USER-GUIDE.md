@@ -2,15 +2,14 @@
 
 ## What Devrun Is
 
-Devrun is a local control center for running and observing multiple dev projects from one place.
+Devrun is a shared local runtime for your AI agents. They usually register and
+configure projects, run services, and inspect logs through the API while Devrun
+stays in the background. Its browser window can be closed without stopping services.
 
-Instead of remembering which terminal tab belongs to which repo, you register a project once, define one or more named services, and then use Devrun to:
-- start, stop, and restart services
-- inspect recent lifecycle history
-- read verbose terminal output
-- open the verified app URL for a running web service
-
-Devrun is built for both humans and AI agents. The UI and the APIs describe the same runtime state.
+The human UI is mainly for checking and stopping accumulated services, cleaning up
+registered projects, and occasionally starting or opening an app. Logs and history
+remain available when you need them. This guide describes the current workspace;
+the proposed recent-project overview and Running filter are not implemented yet.
 
 ## Core Concepts
 
@@ -88,6 +87,14 @@ Search project names or paths in the sidebar, then select a service tab.
 On mobile, use the project chooser at the top. The sidebar scrolls independently
 so larger registries do not push the terminal off screen.
 
+### Stop services you no longer need
+
+Find projects with running services using the sidebar status, select the project,
+and use Stop on each service you want to shut down. Stopping keeps the saved service
+configuration so you or your agent can start it again. Closing the browser does not
+stop these processes. The current UI does not yet show running duration or an
+inactivity assessment.
+
 ### Run and open
 
 Use Start when stopped. While running, Restart and Stop are available, including
@@ -111,7 +118,9 @@ Run details.
 ### Remove a project
 
 Open the project actions menu (`···`) and choose Remove project, then confirm.
-The existing API removal behavior still applies; configuration remains agent-led.
+Removal requests stops for configured services and removes the project registration,
+saved service configuration, and history. It does not delete the repository files.
+Use Stop instead when you just want to end a run and keep the project ready for later.
 
 ## How Devrun Chooses Ports
 

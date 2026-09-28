@@ -1,8 +1,11 @@
 # devrun-ui
 
-Devrun is a local control center for running and observing multiple dev projects from one place.
+Devrun is a shared local runtime that AI agents use in the background, with a UI
+for finding projects and stopping services you no longer need.
 
-It gives both humans and AI agents the same shared runtime surface:
+Agents handle most setup, process control, and debugging through the API. Olof
+mainly opens the UI for cleanup and occasional manual starts. Both use the same
+runtime capabilities:
 - register project roots
 - configure named services per project
 - start, stop, and restart those services
@@ -85,19 +88,26 @@ npm run dev
 
 ## Everyday workflow
 
-Ask your AI agent to register projects and configure services through the API.
-The UI is for observing and controlling that shared runtime:
+Agents register and configure projects, run services, and read logs through the API;
+the browser does not need to stay open. See the operator recipes below.
 
-1. Find a project with sidebar search, or use the project chooser on mobile.
-2. Select its service tab. Start is shown for stopped services; Restart and Stop
-   are available while running. Open app appears when the service is ready with a verified URL.
-3. Read live output or recent stopped logs in the terminal.
-4. Toggle History for the lifecycle timeline. Details exposes commands, directories,
-   ports, run identity, and Open log when a durable file is available.
-5. Use the project actions menu to remove a project after confirmation.
+For an occasional visit to the current UI:
 
-Project registration and configuration remain API operations. See the operator
-recipes below. The UI intentionally has no manual Add/Configure form.
+1. Find a project with sidebar search, or the mobile project chooser. Project rows
+   show running counts and status.
+2. Select a running service and press Stop when you no longer need it. Repeat for
+   other running services in that project. Stopping keeps configuration for later.
+3. Use Start for a stopped service, or Open app when it is ready with a verified URL.
+4. Use the project menu to remove an unwanted registration after confirmation.
+   Removal also requests stops for configured services and removes saved service
+   configuration and history; repository files remain untouched.
+5. When investigation is needed, open the terminal, History, or Details. Agents
+   normally perform this work through the APIs.
+
+The planned recent-project overview, Running filter, and duration-based cleanup
+controls are not implemented yet. [Product direction](docs/VISION.md) and
+[design intent](DESIGN.md) define that next step. Manual Add/Configure forms are
+intentionally absent.
 
 ## UI stack
 

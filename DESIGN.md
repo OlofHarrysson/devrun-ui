@@ -2,12 +2,14 @@
 
 ## Intent
 
-A calm local workspace for finding a project, running a service, and understanding
-its output. Preserve the project → service → terminal flow and the shared human/AI
-runtime contract. Prioritize scanability and useful status over dashboard decoration.
-Olof is the primary user. Agents register and configure services through the API;
-the human UI is for observing, running, opening, and removing projects. A manual
-configuration form is not a product priority. Keep the API configuration contract.
+Devrun primarily serves agents in the background. Olof's occasional UI visits are
+for finding recent projects, stopping accumulated services, and removing unwanted
+registrations; manual starts are secondary and reading logs is uncommon. Prioritize
+a scannable overview and cleanup actions. Preserve the shared runtime contract and
+keep project/service output available as a detail view. Configuration stays agent-led.
+
+The current implementation remains a terminal workspace. DR-OVERVIEW below is a
+proposal for the next iteration, not a description of shipped behavior.
 
 ## Direction and ownership
 
@@ -62,6 +64,32 @@ Olof approved this palette on 28 September 2026.
 - Stop remains available while starting. Hide redundant Start for running services;
   show Restart only while running. Disable controls while an action is pending.
 - Preserve service switching, logs, history, run identity, and all runtime API semantics.
+
+### DR-OVERVIEW — proposed, not implemented
+
+- Landing view: quiet project rows showing name, named running services, last start,
+  running duration, and contextual Start/Stop/Open app actions. Open project detail
+  for terminal output and history; do not load every terminal just to review projects.
+- Offer All / Running independently from sort order. Recommend Running with recent
+  starts first on initial entry, with longest-running first available for cleanup.
+  Keep a stable tie-break and preserve selection during refreshes.
+- Project recency means its most recent service start, including agent starts.
+  Within a project show duration per service; a longest-running project sort uses
+  its oldest currently running service, not the most recently restarted one.
+- Current runtime types expose startedAt. Validate history/persistence across daemon
+  restarts before implementation; show unknown when timestamps cannot be recovered.
+  Never equate a creation date, quiet logs, or a long run with last use or inactivity.
+- Allow stopping a named running service directly from the overview. Keep the row
+  pending until confirmed, surface failures inline, and handle rows leaving Running
+  after success without losing track of which action completed. Reflect agent changes.
+- Keep removal secondary and explicitly separate from Stop. Explain its registration,
+  configuration, and history effects without suggesting repository deletion.
+- Retain the approved palette and adapt rows for mobile. No new dashboard metrics,
+  automatic shutdown, or bulk controls in the first pass.
+- Acceptance: use a large registry with multiple services per project, mixed run
+  ages, stopped projects, unknown timestamps, and agent-initiated changes. Verify
+  sorting/filtering, stopping the intended service, later restart with intact config,
+  failures/stale data, keyboard access, and desktop/mobile layout.
 
 ## Evidence and workflow
 

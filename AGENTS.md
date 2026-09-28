@@ -1,12 +1,14 @@
 # Repository Guidelines
 
 ## One-line vision
-Devrun is the simplest local control center for running and observing multiple dev projects and their long-running services, with AI-ready access to what is happening.
+Devrun is a shared local runtime for AI agents, with a lightweight human overview for finding recent projects and stopping services no longer needed.
 
 ## The problem
-Developers working across 5-10 projects constantly context-switch between terminals, scripts, and tabs to start services, inspect logs, and recover from failures.
-This is noisy, slow, and hard to hand off to AI tooling.
-The second problem is that AIs and humans can't share one terminal and that it's hard for the AI to inspect the terminal to understand the project, especially when debugging.
+Agents use Devrun in the background for setup, process control, and debugging.
+Olof rarely opens the UI; he mainly stops accumulated services that consume resources
+and battery, removes unwanted registrations, and occasionally starts recent projects.
+Prioritize this cleanup workflow over terminal polish. Run age is not proof of inactivity.
+See `docs/VISION.md` for priorities and `DESIGN.md` for proposed versus implemented UX.
 
 ## Project Structure & Module Organization
 - `src/app/`: Next.js App Router entry files (`layout.tsx`, `page.tsx`).
@@ -22,6 +24,7 @@ The second problem is that AIs and humans can't share one terminal and that it's
 - `docs/USER-GUIDE.md`: first-time user walkthrough of the UI and service model.
 - `docs/ARCHITECTURE.md`: code-level structure, runtime flow, and main ownership boundaries.
 - `docs/VISION.md`: stable product direction and scope guardrails.
+- `DESIGN.md`: implemented design and proposed overview specifications.
 - `AGENTS.md` (this file): contributor and implementation workflow conventions.
 
 ## Build, Test, and Development Commands
@@ -68,8 +71,8 @@ The second problem is that AIs and humans can't share one terminal and that it's
 Read [DESIGN.md](DESIGN.md) and the installed
 [Harness workflow](tools/design-harness/modules/workflow/README.md) for UI work.
 [Local integration](docs/design-harness.md) owns capture/review commands, fixtures,
-and the development-only `/design` reference. [Initial review](docs/design-review.md)
-records the next priorities. Keep managed Harness files unchanged; update them with
-the source installer. Before changing existing UI, retain matching desktop/mobile
+and the development-only `/design` reference. [Design review](docs/design-review.md)
+records prior findings and validation; `docs/VISION.md` owns current priorities.
+Keep managed Harness files unchanged; update them with the source installer. Before changing existing UI, retain matching desktop/mobile
 captures, then present before/after evidence using the installed review tool with
 both detail and page context. Measurements inform review; they do not approve taste.

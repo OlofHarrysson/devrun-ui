@@ -1,73 +1,76 @@
 # Devrun Vision Brief
 
-This document is the stable product direction for Devrun.
-Implementation details (frameworks, libraries, internal APIs) can change.
+This document owns product priorities. Current UI behavior is documented in the
+[User Guide](USER-GUIDE.md); proposed surfaces live in [DESIGN.md](../DESIGN.md).
 
 ## One-line vision
-Devrun is the simplest local control center for running and observing multiple dev projects and their long-running services, with AI-ready access to what is happening.
+Devrun is a shared local runtime for AI agents, with a lightweight human overview
+for finding recent projects and stopping services that are no longer needed.
 
-## The problem
-Developers working across 5-10 projects constantly context-switch between terminals, scripts, and tabs to start services, inspect logs, and recover from failures.
-This is noisy, slow, and hard to hand off to AI tooling.
-The second problem is that AIs and humans can't share one terminal and that it's hard for the AI to inspect the terminal to understand the project, especially when debugging.
+## Actual workflow
+Olof is the primary user. His agents register and configure projects, start services,
+and inspect state and logs through the API. Devrun usually runs in the background;
+opening its window is occasional, not the primary interaction.
 
-## Product promise
-From one interface, a developer should be able to:
-- See all active projects at once.
-- Start/stop/restart each service with one click.
-- Open and switch between service terminals instantly.
-- Extract the current system state and relevant logs in a format that AI can use.
+Services accumulate across projects and consume resources and battery. Olof opens
+the UI mainly to stop things he no longer needs and clean up the project list.
+Occasionally he wants to find a recent project and start it manually. He rarely reads
+logs himself. A useful product can have low UI visit frequency and high agent usage.
+
+## Priority user stories
+1. **Review running work:** See which projects have running services and how long
+   each service has been running, without opening their terminals.
+2. **Stop accumulated services:** Identify older runs and stop the services Olof
+   chooses, while keeping project configuration available for next time.
+3. **Return to recent work:** Find recently started projects, optionally filter to
+   running projects, and manually start a stopped service when needed.
+4. **Clean the registry:** Remove projects no longer wanted in Devrun. Distinguish
+   removing a registration from stopping a service; do not delete repository files.
+5. **Operate through an agent:** Configure, control, and debug services reliably
+   through the same runtime APIs, without requiring an open UI.
+6. **Inspect when necessary:** Keep terminal output, history, readiness, and run
+   identity accessible within a project as secondary human workflows.
 
 ## Design principles
-- Local-first: run on localhost, no cloud dependency required.
-- Fast path first: optimize for "I need this running now" workflows.
-- Low ceremony: minimal setup, no container complexity required.
-- Transparent process control: each service is a real shell process with streamed stdin/stdout/stderr access.
-- AI-compatible by default: state and logs are easy to fetch programmatically.
+- Agent-first operation; occasional human oversight and cleanup.
+- Local-first, low ceremony, and no required cloud dependency.
+- Put running services, recency, and stop controls ahead of terminal detail in the
+  next overview. Preserve the current workspace for inspection.
+- Name timestamps precisely: last started and running duration are observable;
+  neither establishes last use or inactivity. Logs and API polling are not proof
+  that an app is being used.
+- Keep resource-saving decisions manual until a separate inactivity policy is
+  agreed. Do not silently stop old services or claim measured battery savings.
+- Keep stale/unknown state visible so cleanup decisions use trustworthy data.
 
-## Target users
-- Solo builders and small teams running multiple local projects.
-- AI-heavy workflows where assistants need quick operational context.
-- Developers who want a GUI workflow without losing terminal power.
+## Next UX proposal — not implemented
+A project overview with All / Running filtering, recent-start ordering, and a
+longest-running sort for cleanup. Show named running services, duration, and direct
+Stop controls; provide Start for stopped services and Open app where available.
+Project details retain logs and history. See DR-OVERVIEW in [DESIGN.md](../DESIGN.md).
 
-## Core UX outcomes
-- A project can be added and made runnable in under 1 minute.
-- A stopped service can be restarted in 1 click.
-- A user can jump from one project/service terminal to another in under 2 clicks.
-- A user (or AI agent) can capture current status + log tails in one API call.
+Define recency from actual service starts, including agent-initiated starts, rather
+than UI visits or registration dates. Validate historical timestamp availability
+across Devrun restarts before promising durable recent ordering; show unknown times
+honestly. Filtering and sorting are independent controls.
 
-## Product scope
-In scope:
-- Multi-project service management.
-- Per-service terminal sessions.
-- Basic log/state APIs for automation and AI.
+## Scope and guardrails
+Keep multi-project service management, shared process/state/history/log APIs, and
+per-service output. Keep manual configuration forms, embedded AI chat, elaborate
+observability dashboards, automatic idle shutdown, and blanket stop-all behavior
+out of this next iteration. Bulk selected stopping can follow if individual stops
+prove too slow. Cloud hosting, multi-user auth, and production orchestration remain
+out of scope.
 
-Out of scope (for now):
-- Cloud hosting and multi-user auth.
-- Full production orchestration.
-- Deep deployment lifecycle management.
-
-## AI integration direction
-Devrun should act as a reliable local runtime surface for AI assistants.
-At minimum, assistants need endpoints to:
-- Read current project/service state.
-- Read log tails for selected services.
-- Start/stop/restart services.
-- Send terminal input when needed.
-
-Later, we can add richer "operator" actions, but this base contract is the foundation.
-
-## Success metrics (early)
-- Setup friction: time to first project configured.
-- Control efficiency: clicks/time to recover broken local stack.
-- Context quality: usefulness of snapshots/log tails for AI-assisted debugging.
-- Daily utility: frequency of use across active projects.
+## Success criteria
+- Agents can run and inspect services without an open browser or human setup forms.
+- A short UI visit is enough to identify and stop unwanted running services.
+- Recent work is easy to find even among many registered projects.
+- Stopping leaves configuration intact for a later start.
+- Old or quiet services are never falsely presented as known to be unused.
+- Measure task completion and agent reliability, not time spent in the UI.
 
 ## Build strategy
-Ship a small, useful core first.
-Validate with real daily usage.
-Only then add complexity (saved layouts, teams, access controls, richer observability).
-
-## Consultancy handoff note
-When making technical decisions, prioritize preserving the user outcomes above.
-If a change improves implementation quality but weakens speed, simplicity, or AI readability, treat it as a tradeoff and justify it explicitly.
+Keep the approved visual theme. Prioritize the overview and cleanup workflow over
+further terminal polish or handoff features. Validate with Olof's real registry and
+short cleanup sessions before expanding features. Preserve existing process APIs.

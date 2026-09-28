@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-// Use an already-running Devrun. Never boot another manager against shared state.
+// Use an already-running Terminal Manager. Never boot another manager against shared state.
 export default defineConfig({
   testDir: "./tests",
   testMatch: ["workspace.spec.ts", "overview.spec.ts", "terminal-reliability.spec.ts"],

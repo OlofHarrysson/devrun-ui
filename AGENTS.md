@@ -1,10 +1,10 @@
 # Repository Guidelines
 
 ## One-line vision
-Devrun is a shared local runtime for AI agents, with a lightweight human overview for finding recent projects and stopping services no longer needed.
+Terminal Manager is a shared local runtime for AI agents, with a lightweight human overview for finding recent projects and stopping services no longer needed.
 
 ## The problem
-Agents use Devrun in the background for setup, process control, and debugging.
+Agents use Terminal Manager in the background for setup, process control, and debugging.
 Olof rarely opens the UI; he mainly stops accumulated services that consume resources
 and battery, removes unwanted registrations, and occasionally starts recent projects.
 Prioritize this cleanup workflow over terminal polish. Run age is not proof of inactivity.

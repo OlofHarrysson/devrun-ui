@@ -70,7 +70,7 @@ export function useProjectOverview() {
         pendingRef.current = remaining;
         setPending(remaining);
       } catch (cause) {
-        if (mounted.current) setError(cause instanceof Error ? cause.message : "Cannot reach Devrun");
+        if (mounted.current) setError(cause instanceof Error ? cause.message : "Cannot reach Terminal Manager");
       }
     };
     refreshing.current = task().finally(() => { refreshing.current = null; });

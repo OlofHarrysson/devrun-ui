@@ -902,7 +902,7 @@ export function useDevrunApp(): DevrunAppModel {
   }
 
   async function removeProject(project: ProjectState): Promise<void> {
-    const shouldRemove = window.confirm(`Remove ${project.name} from Devrun? This requests stops for its services and removes saved configuration and history. Repository files are kept.`);
+    const shouldRemove = window.confirm(`Remove ${project.name} from Terminal Manager? This requests stops for its services and removes saved configuration and history. Repository files are kept.`);
     if (!shouldRemove) {
       return;
     }

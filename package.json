@@ -1,7 +1,7 @@
 {
-  "name": "devrun-ui",
+  "name": "terminal-manager",
   "version": "0.1.0",
-  "description": "Local GUI process manager with browser terminal streaming",
+  "description": "Shared local terminal manager for AI agents and humans",
   "main": "dist/server.js",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch src/backend/server.ts",

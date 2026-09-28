@@ -1,15 +1,15 @@
-# Devrun Vision Brief
+# Terminal Manager Vision Brief
 
 This document owns product priorities. Current UI behavior is documented in the
 [User Guide](USER-GUIDE.md); surface specifications live in [DESIGN.md](../DESIGN.md).
 
 ## One-line vision
-Devrun is a shared local runtime for AI agents, with a lightweight human overview
+Terminal Manager is a shared local runtime for AI agents, with a lightweight human overview
 for finding recent projects and stopping services that are no longer needed.
 
 ## Actual workflow
 Olof is the primary user. His agents register and configure projects, start services,
-and inspect state and logs through the API. Devrun usually runs in the background;
+and inspect state and logs through the API. Terminal Manager usually runs in the background;
 opening its window is occasional, not the primary interaction.
 
 Services accumulate across projects and consume resources and battery. Olof opens
@@ -24,7 +24,7 @@ logs himself. A useful product can have low UI visit frequency and high agent us
    chooses, while keeping project configuration available for next time.
 3. **Return to recent work:** Find recently started projects, optionally filter to
    running projects, and manually start a stopped service when needed.
-4. **Clean the registry:** Remove projects no longer wanted in Devrun. Distinguish
+4. **Clean the registry:** Remove projects no longer wanted in Terminal Manager. Distinguish
    removing a registration from stopping a service; do not delete repository files.
 5. **Operate through an agent:** Configure, control, and debug services reliably
    through the same runtime APIs, without requiring an open UI.

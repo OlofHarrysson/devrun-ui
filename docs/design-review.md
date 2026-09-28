@@ -2,7 +2,7 @@
 
 ## Product direction after daily-use review
 
-Olof reports that Devrun primarily serves his agents in the background. His UI visits
+Olof reports that Terminal Manager primarily serves his agents in the background. His UI visits
 are mostly for stopping accumulated services and cleaning up projects, with occasional
 manual starts and little direct log reading. The landing page now implements the recent
 project/running-service overview in [DESIGN.md](../DESIGN.md#dr-overview--implemented).
@@ -75,7 +75,7 @@ the shared development instance. Browser checks used Chromium, not physical phon
 ## Initial setup scope
 
 Design Harness is installed; `/design` presents the Made by Olof theme through real
-Devrun controls. This pass establishes a review workflow and a concrete next sprint.
+Terminal Manager controls. This pass establishes a review workflow and a concrete next sprint.
 The initial setup left the main workspace unchanged. Existing log-opening, port, and
 runtime changes were inspected and preserved.
 
@@ -130,7 +130,7 @@ to reach. A dark theme alone does not resolve the action hierarchy.
 **Initial setup:** Scoped theme and font adoption in `/design`, real component demo,
 current/theme selector, safe start/stop/restart/reset, and clear focus. Visual review
 caught and corrected low-contrast secondary outline buttons and neutral soft badges.
-The theme retains the source’s main hues and adapts roles for Devrun controls.
+The theme retains the source’s main hues and adapts roles for Terminal Manager controls.
 
 ### 3. Keep configuration agent-led — founder direction
 
@@ -206,3 +206,25 @@ methodology or personalization changes are warranted by this pass.
 The implementation also showed why lifecycle validation needs a real service: fixture
 states did not expose the socket-close/state-poll race. Retain the isolated lifecycle
 check alongside responsive fixtures for future UI work.
+
+## Product naming — 28 September 2026
+
+Olof selected **Terminal Manager**. The overview, project sidebar, design reference,
+page metadata, setup/error/removal copy, package metadata, and maintained product
+docs use that name. GitHub is `OlofHarrysson/terminal-manager`; the local folder and
+runtime compatibility identifiers remain documented in README. The operator skill
+uses Terminal Manager in its display name and guidance while retaining its invocation
+ID and bootstrap paths. The registered self-project display name was updated through
+the configuration API without changing its command.
+
+Matching Harness evidence is in `artifacts/design/branding-baseline/` and
+`artifacts/design/branding-after/`, covering overview/workspace/reference at 1440px
+and 390px, with page context and brand crops. Both snapshots passed; the longer
+name fits the workspace, and wraps in the mobile design-reference header. The local
+comparison configuration is `artifacts/design/rename-review.json`.
+
+Validation: UI and backend typechecks passed, plus all 20 mocked overview/workspace
+checks (including 320px). Skill validation and the live bootstrap passed. Runtime
+backend files were preserved because the shared development watcher would restart
+on edits; existing internal API identity and diagnostics remain compatible. No
+production build or shared-runtime restart was needed for this naming change.

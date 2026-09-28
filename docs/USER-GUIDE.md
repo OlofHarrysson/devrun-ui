@@ -1,9 +1,9 @@
-# Devrun User Guide
+# Terminal Manager User Guide
 
-## What Devrun Is
+## What Terminal Manager Is
 
-Devrun is a shared local runtime for your AI agents. They usually register and
-configure projects, run services, and inspect logs through the API while Devrun
+Terminal Manager is a shared local runtime for your AI agents. They usually register and
+configure projects, run services, and inspect logs through the API while Terminal Manager
 stays in the background. Its browser window can be closed without stopping services.
 
 The human UI is mainly for checking and stopping accumulated services, cleaning up
@@ -14,7 +14,7 @@ remain available when you need them. The landing page is a project overview; ter
 
 ### Project
 
-A project is a repo root that Devrun knows about.
+A project is a repo root that Terminal Manager knows about.
 
 ### Service
 
@@ -29,7 +29,7 @@ Each service can also have:
 
 ### Default Service
 
-The default service is the one Devrun uses when an API call omits `serviceName`.
+The default service is the one Terminal Manager uses when an API call omits `serviceName`.
 
 ### History vs Logs
 
@@ -38,19 +38,19 @@ The default service is the one Devrun uses when an API call omits `serviceName`.
 
 ### Port
 
-Devrun injects `PORT=<port>` before launch.
+Terminal Manager injects `PORT=<port>` before launch.
 
-- If you set a `port`, Devrun treats it as the preferred starting port.
-- If that port is occupied or reserved, Devrun assigns the next available port upward.
-- If you do not set a port, Devrun starts from its default web range.
+- If you set a `port`, Terminal Manager treats it as the preferred starting port.
+- If that port is occupied or reserved, Terminal Manager assigns the next available port upward.
+- If you do not set a port, Terminal Manager starts from its default web range.
 
-This means one stopped service does not silently lose its port to another Devrun-managed service.
+This means one stopped service does not silently lose its port to another Terminal Manager-managed service.
 
 ### Effective URL
 
-If a running service exposes a local web URL, Devrun publishes it as `effectiveUrl`.
+If a running service exposes a local web URL, Terminal Manager publishes it as `effectiveUrl`.
 
-Use that value as the app URL. Devrun prefers `localhost` when it can verify that `localhost` safely reaches the assigned port.
+Use that value as the app URL. Terminal Manager prefers `localhost` when it can verify that `localhost` safely reaches the assigned port.
 
 ## First Run
 
@@ -60,7 +60,7 @@ Use that value as the app URL. Devrun prefers `localhost` when it can verify tha
 npm install
 ```
 
-2. Start Devrun:
+2. Start Terminal Manager:
 
 ```bash
 npm run dev
@@ -74,7 +74,7 @@ npm run dev
 
 ### Set up through your agent
 
-Ask your AI agent to register the project and configure its services in Devrun.
+Ask your AI agent to register the project and configure its services in Terminal Manager.
 Agents use `POST /api/projects` (or path-first start) and `POST /api/project-config`.
 Registration may seed a `web` service from `package.json`; the agent checks that the
 command, working directory, and port are correct. Manual configuration is not part
@@ -97,7 +97,7 @@ A project leaves the Running view when its last running service stops.
 
 Last started and Running for are timestamps, not evidence of inactivity or battery
 usage. Missing stopped-service start times are recovered from retained history when
-possible; Start time unknown is shown otherwise. Devrun does not automatically stop
+possible; Start time unknown is shown otherwise. Terminal Manager does not automatically stop
 old or quiet services. Closing the browser also leaves services running.
 
 If state refresh fails, the overview labels cached state and disables service controls.
@@ -130,17 +130,17 @@ Removal requests stops for configured services and removes the project registrat
 saved service configuration, and history. It does not delete the repository files.
 Use Stop instead when you just want to end a run and keep the project ready for later.
 
-## How Devrun Chooses Ports
+## How Terminal Manager Chooses Ports
 
 ### Preferred port
 
-If a service config includes a `port`, Devrun starts its search there.
+If a service config includes a `port`, Terminal Manager starts its search there.
 
-For example, if a web service asks for `3000` but `3000` is unavailable, Devrun assigns `3001`, injects `PORT=3001`, and reports that assignment in state.
+For example, if a web service asks for `3000` but `3000` is unavailable, Terminal Manager assigns `3001`, injects `PORT=3001`, and reports that assignment in state.
 
 ### Auto-assigned port
 
-If a service has no `port`, Devrun chooses one and keeps it reserved for that service.
+If a service has no `port`, Terminal Manager chooses one and keeps it reserved for that service.
 
 That reservation stays stable across stop/start cycles, so:
 - service A can stop
@@ -149,7 +149,7 @@ That reservation stays stable across stop/start cycles, so:
 
 ## AI and Automation Use
 
-Devrun also exposes APIs for AI operators.
+Terminal Manager also exposes APIs for AI operators.
 
 The usual flow is:
 1. `GET /api/capabilities`
@@ -173,15 +173,15 @@ Ask your agent to update the real command, `cwd`, and optional port through
 
 Either:
 - another process is using that port, or
-- another Devrun service already reserves that port
+- another Terminal Manager service already reserves that port
 
-Use a different preferred starting port, or remove the port and let Devrun assign one.
+Use a different preferred starting port, or remove the port and let Terminal Manager assign one.
 
 ### App starts, but the URL is wrong
 
-Use the `Open app` button or the `effectiveUrl` from Devrun APIs.
+Use the `Open app` button or the `effectiveUrl` from Terminal Manager APIs.
 
-Devrun normally publishes `localhost`; if IPv4/IPv6 loopback behaves inconsistently, it may fall back to a numeric loopback URL and show a warning.
+Terminal Manager normally publishes `localhost`; if IPv4/IPv6 loopback behaves inconsistently, it may fall back to a numeric loopback URL and show a warning.
 
 ### Service exits immediately
 

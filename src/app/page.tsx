@@ -29,8 +29,8 @@ export default function HomePage() {
   return (
     <main className="overview-shell">
       <header className="overview-header">
-        <a className="overview-brand" href="/" aria-label="Devrun home">Devrun<span className="brand-dot" aria-hidden="true" /></a>
-        <div className="overview-title"><h1>Projects</h1><p>{app.loaded ? `${runningServices} running ${runningServices === 1 ? "service" : "services"} across ${runningProjects} ${runningProjects === 1 ? "project" : "projects"}` : "Connecting to Devrun…"}</p></div>
+        <a className="overview-brand" href="/" aria-label="Terminal Manager home">Terminal Manager<span className="brand-dot" aria-hidden="true" /></a>
+        <div className="overview-title"><h1>Projects</h1><p>{app.loaded ? `${runningServices} running ${runningServices === 1 ? "service" : "services"} across ${runningProjects} ${runningProjects === 1 ? "project" : "projects"}` : "Connecting to Terminal Manager…"}</p></div>
       </header>
 
       <div className="overview-tools">
@@ -42,7 +42,7 @@ export default function HomePage() {
         <label className="overview-sort"><span className="sr-only">Sort projects</span><select aria-label="Sort projects" value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="recent">Recently started</option><option value="longest">Longest running</option></select></label>
       </div>
 
-      {app.error && <div className="overview-warning" role="alert"><strong>Cannot refresh Devrun.</strong> {app.error}. {app.lastUpdated ? `Showing state from ${new Date(app.lastUpdated).toLocaleTimeString()}.` : "No runtime state available."} <button type="button" onClick={() => { void app.refresh(); }}>Retry</button></div>}
+      {app.error && <div className="overview-warning" role="alert"><strong>Cannot refresh Terminal Manager.</strong> {app.error}. {app.lastUpdated ? `Showing state from ${new Date(app.lastUpdated).toLocaleTimeString()}.` : "No runtime state available."} <button type="button" onClick={() => { void app.refresh(); }}>Retry</button></div>}
       {app.metadataError && <p className="overview-warning">Some start times could not be loaded. Runtime state is available.</p>}
       <p ref={noticeRef} className="overview-notice" role="status" tabIndex={-1}>{app.notice}</p>
       {Object.entries(app.actionErrors).map(([key, message]) => <p className="overview-warning" role="alert" key={key}>{message}</p>)}
@@ -50,7 +50,7 @@ export default function HomePage() {
       {!app.loaded && !app.error ? <p className="overview-empty">Loading projects…</p> : null}
       {app.loaded && !visible.length && <div className="overview-empty">
         <h2>{query.trim() ? "No matching projects" : !app.projects.length ? "No projects yet" : "Nothing running"}</h2>
-        <p>{query.trim() ? "Try another project name or path." : !app.projects.length ? "Ask your agent to register a project and configure its services in Devrun." : "Your projects are still here, ready for next time."}</p>
+        <p>{query.trim() ? "Try another project name or path." : !app.projects.length ? "Ask your agent to register a project and configure its services in Terminal Manager." : "Your projects are still here, ready for next time."}</p>
         {!!app.projects.length && filter === "running" && <button className="btn btn-sm btn-outline" onClick={() => setFilter("all")}>Show all projects</button>}
       </div>}
 

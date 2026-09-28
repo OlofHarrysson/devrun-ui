@@ -1,8 +1,8 @@
-# Devrun design
+# Terminal Manager design
 
 ## Intent
 
-Devrun primarily serves agents in the background. Olof's occasional UI visits are
+Terminal Manager primarily serves agents in the background. Olof's occasional UI visits are
 for finding recent projects, stopping accumulated services, and removing unwanted
 registrations; manual starts are secondary and reading logs is uncommon. Prioritize
 a scannable overview and cleanup actions. Preserve the shared runtime contract and
@@ -16,7 +16,7 @@ for service inspection, logs, and secondary project removal.
 [Made by Olof](https://www.madebyolof.com) is the selected **directional** reference
 for charcoal surfaces, neutral text, warm gold-orange actions, DM Sans, and restrained
 surface treatment. The palette is adapted from its local
-`src/styles/global.css`; Devrun owns its copy in
+`src/styles/global.css`; Terminal Manager owns its copy in
 [`src/styles/olof-theme.css`](src/styles/olof-theme.css).
 Do not carry over the personal portrait, Lora wordmark, hero animation, marketing
 scale, or narrow editorial layout. Commands and output retain monospace type.

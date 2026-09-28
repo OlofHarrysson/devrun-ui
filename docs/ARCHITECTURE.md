@@ -1,10 +1,10 @@
-# Devrun Architecture
+# Terminal Manager Architecture
 
 This document explains how the current MVP is structured in code so contributors can find the right place to change behavior.
 
 ## High-Level Shape
 
-Devrun is one local app with two halves:
+Terminal Manager is one local app with two halves:
 - a Next.js UI with a project cleanup overview at `/` and terminal details at `/project`
 - an Express/WebSocket backend that owns process lifecycle, persistence, and runtime state
 
@@ -36,7 +36,7 @@ If you need to change API contracts, project discovery, or startup seeding behav
 
 Recent changes also moved port ownership logic here:
 - configured ports are treated as preferred starting points
-- Devrun assigns the first available unreserved port at or above that starting point
+- Terminal Manager assigns the first available unreserved port at or above that starting point
 - assigned ports are persisted so stopped services keep their slot
 - local app URLs prefer `localhost`, with numeric loopback probes used internally to detect ambiguous IPv4/IPv6 behavior
 

@@ -24,7 +24,7 @@ export function CommandBar({ selectedProject, selectedService, onOpenLog, onActi
   return (
     <div id="command-bar" className="command-bar">
       {!selectedProject ? (
-        <div className="setup-message"><strong>Bring your projects here.</strong><p>Ask your agent to register a project and configure its services in Devrun.</p></div>
+        <div className="setup-message"><strong>Bring your projects here.</strong><p>Ask your agent to register a project and configure its services in Terminal Manager.</p></div>
       ) : selectedProject.configError ? (
         <div className="setup-message" role="alert"><strong>Project not configured</strong><p>{selectedProject.configError}</p><p>Ask your agent to update this project’s service configuration.</p></div>
       ) : !selectedService ? (

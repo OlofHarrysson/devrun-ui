@@ -1,6 +1,6 @@
-# devrun-ui
+# Terminal Manager
 
-Devrun is a shared local runtime that AI agents use in the background, with a UI
+Terminal Manager is a shared local runtime that AI agents use in the background, with a UI
 for finding projects and stopping services you no longer need.
 
 Agents handle most setup, process control, and debugging through the API. Olof
@@ -25,10 +25,20 @@ runtime capabilities:
 - `docs/VISION.md`: stable product direction
 - `AGENTS.md`: contributor conventions and docs index
 
-## What Devrun Does
+## Naming and compatibility
+
+The product is **Terminal Manager**; the GitHub repository is
+[`OlofHarrysson/terminal-manager`](https://github.com/OlofHarrysson/terminal-manager).
+The existing local checkout can remain at `/Users/olof/git/codex-projects/devrun-ui`.
+Runtime identifiers remain compatible: `.devrun/` data, `DEVRUN_*` environment
+variables, the `devrun-ui` API identity, browser selection keys, and the
+`shared-terminal-hub-operator` skill invocation/bootstrap paths are unchanged.
+Existing project registrations and running services require no migration.
+
+## What Terminal Manager Does
 
 - Registers multiple local projects by path
-- Stores per-project service config inside Devrun instead of per-repo YAML
+- Stores per-project service config inside Terminal Manager instead of per-repo YAML
 - Starts, stops, and restarts named services from one UI
 - Opens one terminal tab per service and writes durable per-run log files
 - Keeps a low-noise lifecycle history alongside verbose terminal output
@@ -39,7 +49,7 @@ runtime capabilities:
 
 ### Project
 
-A project is a repo root known to Devrun.
+A project is a repo root known to Terminal Manager.
 
 ### Service
 
@@ -47,7 +57,7 @@ A service is a named shell command inside that project, with optional `cwd` and 
 
 ### Default Service
 
-The default service is the service Devrun uses when an API call omits `serviceName`.
+The default service is the service Terminal Manager uses when an API call omits `serviceName`.
 
 ### History vs Logs
 
@@ -56,17 +66,17 @@ The default service is the service Devrun uses when an API call omits `serviceNa
 
 ### Port
 
-Devrun injects `PORT=<port>` before launch.
+Terminal Manager injects `PORT=<port>` before launch.
 
 - A configured `port` is the preferred starting point.
-- If that port is occupied or reserved, Devrun assigns the next available port upward.
+- If that port is occupied or reserved, Terminal Manager assigns the next available port upward.
 - Assigned ports stay stable across stop/start cycles.
 
 ### Effective URL
 
-If a service exposes a local web URL, Devrun returns it as `effectiveUrl`.
+If a service exposes a local web URL, Terminal Manager returns it as `effectiveUrl`.
 
-Use that value instead of reconstructing a URL manually. Devrun prefers `localhost` when it can verify it safely reaches the assigned port.
+Use that value instead of reconstructing a URL manually. Terminal Manager prefers `localhost` when it can verify it safely reaches the assigned port.
 
 ## Quick start
 
@@ -129,21 +139,21 @@ forms are intentionally absent.
 
 ## Project config (simple mode)
 
-- Devrun stores service config in:
+- Terminal Manager stores service config in:
   - `.devrun/projects.json`
   - `.devrun/project-configs.json`
 - No `.devrun.yml` is required in managed projects.
-- On project add/startup, Devrun tries to auto-seed one `web` service from `package.json`:
+- On project add/startup, Terminal Manager tries to auto-seed one `web` service from `package.json`:
   - `npm run dev` if a `dev` script exists
   - otherwise `npm run start` if a `start` script exists
 - Agents override that seed through `POST /api/project-config`.
 - Each project has a `defaultService`; API calls can omit `serviceName` and target this service automatically.
-- Devrun injects the assigned `PORT=<port>` before launch.
-- A configured `port` is a preferred starting point, not a hard reservation; if it is occupied or reserved, Devrun walks upward to the next available port.
-- Assigned ports stay sticky across stop/start cycles so one stopped service does not silently lose its port to another Devrun-managed service.
-- Devrun persists owned child runs and performs an orphan cleanup sweep on startup.
+- Terminal Manager injects the assigned `PORT=<port>` before launch.
+- A configured `port` is a preferred starting point, not a hard reservation; if it is occupied or reserved, Terminal Manager walks upward to the next available port.
+- Assigned ports stay sticky across stop/start cycles so one stopped service does not silently lose its port to another Terminal Manager-managed service.
+- Terminal Manager persists owned child runs and performs an orphan cleanup sweep on startup.
 - You can trigger manual cleanup via `POST /api/process/cleanup-orphans` if runtime state becomes desynced.
-- Devrun injects `NODE_OPTIONS=--localstorage-file=<...>` when missing, with files stored under `.devrun/runtime/localstorage/` so transient localStorage artifacts stay out of managed project repos.
+- Terminal Manager injects `NODE_OPTIONS=--localstorage-file=<...>` when missing, with files stored under `.devrun/runtime/localstorage/` so transient localStorage artifacts stay out of managed project repos.
 
 Service `cwd` and `port` are optional:
 
@@ -157,7 +167,7 @@ services:
 
 ## Default seeded projects
 
-On startup, Devrun attempts to add these projects automatically (if they exist on disk):
+On startup, Terminal Manager attempts to add these projects automatically (if they exist on disk):
 
 - `/Users/olof/git/codex-projects/devrun-ui`
 - `/Users/olof/git/youtube-looper`
@@ -207,14 +217,14 @@ Notes:
 - Service names must be unique (case-insensitive).
 - `defaultService` must match one configured service name.
 - `port`, when set, must be an integer from `1` to `65535` and is used as the preferred starting port.
-- If command starts with `PORT=<n>`, configured `port` must match `<n>`; inline command ports are treated as exact because Devrun cannot rewrite the shell command safely.
+- If command starts with `PORT=<n>`, configured `port` must match `<n>`; inline command ports are treated as exact because Terminal Manager cannot rewrite the shell command safely.
 
 ### Run identity
 
 - Running services now expose a `runId` in `GET /api/state` and `/api/snapshot`.
 - Stopped services retain `lastRunId` in `GET /api/state` when recent logs are available.
 - Runtime snapshots expose `status` (`starting|ready|stopped|error`) and `ready` to avoid log-scraping for readiness.
-- `effectiveUrl` is the verified local app URL when Devrun can confirm one; prefer it over reconstructing a URL manually. It uses `localhost` when safe and falls back to a numeric loopback URL only when `localhost` is ambiguous.
+- `effectiveUrl` is the verified local app URL when Terminal Manager can confirm one; prefer it over reconstructing a URL manually. It uses `localhost` when safe and falls back to a numeric loopback URL only when `localhost` is ambiguous.
 - New service runs write durable logs under `.devrun/runtime/logs/<projectId>/<serviceName>/<runId>.log`.
 - `GET /api/state` and `GET /api/logs` include `logFilePath` when a durable log exists for the current or latest run.
 - `GET /api/logs` includes `runId` in the response and accepts optional `runId` query param to fetch only that run's logs.
@@ -286,7 +296,7 @@ curl -s "http://localhost:4317/api/logs?projectPath=/Users/olof/git/youtube-loop
 ## Codex Skill
 
 - Skill name: `shared-terminal-hub-operator`
-- Purpose: help AI agents operate Devrun reliably (discover targets, run actions, poll history, inspect logs, verify outcomes).
+- Purpose: help AI agents operate Terminal Manager reliably (discover targets, run actions, poll history, inspect logs, verify outcomes).
 - Skill files:
   - `$CODEX_HOME/skills/custom/shared-terminal-hub-operator/SKILL.md`
   - `$CODEX_HOME/skills/custom/shared-terminal-hub-operator/references/devrun-api.md`

@@ -9,7 +9,7 @@ Runtime does not depend on that checkout. Keep local adaptations outside `tools/
 
 ## Run
 
-Use the existing Devrun development instance; do not start a second process manager
+Use the existing Terminal Manager development instance; do not start a second process manager
 against the same `.devrun` state. The current URL is `http://localhost:4317`.
 Run the shared-terminal-hub bootstrap first if availability is unknown. The design
 commands never start or stop a server.

@@ -29,7 +29,7 @@ export function Sidebar({ projects, selectedProjectId, onSelectProject }: Sideba
   return (
     <aside className="workspace-sidebar" aria-label="Projects">
       <div className="sidebar-identity">
-        <h1>Devrun<span aria-hidden="true" className="brand-dot" /></h1>
+        <h1>Terminal Manager<span aria-hidden="true" className="brand-dot" /></h1>
         <p>{running} active · {projects.length} projects</p>
       </div>
       <label className="project-search">

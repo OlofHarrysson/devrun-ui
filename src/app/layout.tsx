@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Devrun",
+  title: "Terminal Manager",
   description: "Host-native multi-project service runner with shared terminals",
 };
 

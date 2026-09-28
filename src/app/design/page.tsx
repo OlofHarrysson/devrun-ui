@@ -4,7 +4,7 @@ import "../../styles/olof-theme.css";
 import "./reference.css";
 
 export const metadata = {
-  title: "Devrun — design reference",
+  title: "Terminal Manager — design reference",
   robots: { index: false, follow: false },
 };
 

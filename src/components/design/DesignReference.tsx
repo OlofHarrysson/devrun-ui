@@ -31,7 +31,7 @@ export function DesignReference() {
   return (
     <main className="design-reference" data-theme="olof">
       <header className="reference-header">
-        <a href="/" className="reference-brand">Devrun</a>
+        <a href="/" className="reference-brand">Terminal Manager</a>
         <nav aria-label="Design reference">
           <a href="#foundations">Theme</a><a href="#components">Components</a><a href="#direction">Direction</a>
         </nav>

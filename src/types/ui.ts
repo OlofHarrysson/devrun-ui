@@ -29,6 +29,7 @@ export interface ProjectServiceState {
   runId?: string;
   lastRunId?: string;
   logFilePath?: string;
+  startedAt?: string;
 }
 
 export interface ProjectState {

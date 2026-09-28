@@ -1,7 +1,7 @@
 # Devrun Vision Brief
 
 This document owns product priorities. Current UI behavior is documented in the
-[User Guide](USER-GUIDE.md); proposed surfaces live in [DESIGN.md](../DESIGN.md).
+[User Guide](USER-GUIDE.md); surface specifications live in [DESIGN.md](../DESIGN.md).
 
 ## One-line vision
 Devrun is a shared local runtime for AI agents, with a lightweight human overview
@@ -35,7 +35,7 @@ logs himself. A useful product can have low UI visit frequency and high agent us
 - Agent-first operation; occasional human oversight and cleanup.
 - Local-first, low ceremony, and no required cloud dependency.
 - Put running services, recency, and stop controls ahead of terminal detail in the
-  next overview. Preserve the current workspace for inspection.
+  overview. Preserve the current workspace for inspection.
 - Name timestamps precisely: last started and running duration are observable;
   neither establishes last use or inactivity. Logs and API polling are not proof
   that an app is being used.
@@ -43,16 +43,16 @@ logs himself. A useful product can have low UI visit frequency and high agent us
   agreed. Do not silently stop old services or claim measured battery savings.
 - Keep stale/unknown state visible so cleanup decisions use trustworthy data.
 
-## Next UX proposal — not implemented
-A project overview with All / Running filtering, recent-start ordering, and a
+## Current overview
+The landing page provides All / Running filtering, recent-start ordering, and a
 longest-running sort for cleanup. Show named running services, duration, and direct
 Stop controls; provide Start for stopped services and Open app where available.
 Project details retain logs and history. See DR-OVERVIEW in [DESIGN.md](../DESIGN.md).
 
-Define recency from actual service starts, including agent-initiated starts, rather
-than UI visits or registration dates. Validate historical timestamp availability
-across Devrun restarts before promising durable recent ordering; show unknown times
-honestly. Filtering and sorting are independent controls.
+Recency comes from actual service starts, including agent-initiated starts, rather
+than UI visits or registration dates. Missing stopped-service timestamps are
+recovered from retained start events. If history no longer contains a start, show
+an unknown time. Filtering and sorting are independent controls.
 
 ## Scope and guardrails
 Keep multi-project service management, shared process/state/history/log APIs, and
@@ -71,6 +71,6 @@ out of scope.
 - Measure task completion and agent reliability, not time spent in the UI.
 
 ## Build strategy
-Keep the approved visual theme. Prioritize the overview and cleanup workflow over
-further terminal polish or handoff features. Validate with Olof's real registry and
-short cleanup sessions before expanding features. Preserve existing process APIs.
+Keep the approved visual theme. Refine the overview and cleanup workflow from
+actual use before investing in further terminal polish or handoff features. Validate
+with Olof's real registry and short cleanup sessions before expanding features. Preserve existing process APIs.

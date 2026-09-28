@@ -114,3 +114,70 @@
   .history-drawer { position: absolute; inset: 0; z-index: 2; border-left: 0; }
 }
 @media (pointer: coarse) { .service-actions .btn, .history-toggle, .history-close, .project-menu > summary, .service-details > summary { min-height: 44px; } .mobile-project-picker select, .project-search input { font-size: 16px; } }
+
+/* The overview loads state only; output lives in project details. */
+.overview-shell { max-width: 1144px; margin: 0 auto; padding: 36px 32px 64px; min-height: 100dvh; -webkit-font-smoothing: antialiased; }
+.overview-brand { display: inline-flex; align-items: center; gap: 8px; font-size: 22px; font-weight: 650; letter-spacing: -0.05em; color: var(--color-ink); text-decoration: none; }
+.overview-title { margin-top: 28px; }
+.overview-title h1 { font-size: 30px; font-weight: 550; letter-spacing: -0.04em; margin: 0; }
+.overview-title p { margin: 7px 0 0; color: var(--color-muted); font-size: 14px; }
+.overview-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 22px 0 0; }
+.overview-filters { display: flex; gap: 3px; margin-right: auto; }
+.overview-filters button { border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); font: inherit; font-size: 13px; padding: 10px 13px; cursor: pointer; }
+.overview-filters button[aria-pressed="true"] { background: var(--color-surface); color: var(--color-ink); }
+.overview-search input, .overview-sort select { background: transparent; color: var(--color-ink); border: 1px solid var(--color-rule); border-radius: 6px; font: inherit; font-size: 13px; padding: 10px 12px; height: 40px; max-width: 100%; }
+.overview-search input { width: 215px; }
+.overview-search input::placeholder { color: var(--color-muted); }
+.overview-sort select { background: var(--color-canvas); }
+.overview-notice { margin: 12px 0; font-size: 13px; color: var(--color-status-success); }
+.overview-notice:empty { margin: 0; }
+.overview-projects { margin-top: 22px; }
+.overview-project { padding: 18px 0; border-top: 1px solid var(--color-rule); }
+.overview-project-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 14px; }
+.overview-project-heading > div { min-width: 0; }
+.overview-project h2 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -0.025em; overflow-wrap: anywhere; }
+.overview-project h2 a { text-decoration: none; color: var(--color-ink); }
+.overview-project h2 a:hover, .overview-service-name:hover { text-decoration: underline; text-underline-offset: 4px; }
+.overview-path { margin: 4px 0 0; max-width: 65ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted); font: 11px "SFMono-Regular", Consolas, monospace; }
+.overview-recency { color: var(--color-muted); font-size: 12px; margin: 0; flex-shrink: 0; }
+.overview-service { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
+.overview-service-info { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 16px; min-width: 0; }
+.overview-service-name { color: var(--color-ink); font-size: 13px; min-width: 70px; overflow-wrap: anywhere; }
+.overview-service-status { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: 12px; }
+.overview-service-status[data-state="ready"] { color: var(--color-status-success); }
+.overview-service-status[data-state="error"] { color: var(--color-status-error); }
+.overview-duration { font-size: 12px; color: var(--color-muted); }
+.overview-service-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+.overview-service-actions .btn { font-size: 12px; min-width: 66px; height: 34px; min-height: 34px; border-radius: 6px; box-shadow: none; }
+.overview-service-actions .btn-outline { border-color: var(--color-rule); color: var(--color-ink); }
+.overview-service-actions .btn-ghost { color: var(--color-muted); }
+.overview-open { font-size: 12px; color: var(--color-muted); text-decoration: none; }
+.overview-open:hover { color: var(--color-ink); }
+.overview-warning { margin: 14px 0; font-size: 13px; color: var(--color-status-error); overflow-wrap: anywhere; }
+.overview-warning button, .overview-warning a { text-decoration: underline; cursor: pointer; margin-left: 6px; }
+.overview-empty { margin: 64px 0; color: var(--color-muted); font-size: 14px; }
+.overview-empty h2 { font-size: 20px; font-weight: 500; color: var(--color-ink); }
+.overview-empty p { margin: 8px 0 20px; }
+.overview-no-services { color: var(--color-muted); font-size: 13px; }
+.back-to-projects { display: inline-block; font-size: 12px; color: var(--color-muted); margin-bottom: 16px; }
+@media (max-width: 767px) {
+  .overview-shell { padding: 24px 20px 40px; }
+  .overview-title { margin-top: 30px; }
+  .overview-title h1 { font-size: 26px; }
+  .overview-tools { gap: 10px; }
+  .overview-filters { width: 100%; }
+  .overview-search { flex: 1; min-width: 0; }
+  .overview-search input { width: 100%; }
+  .overview-sort { width: 155px; }
+  .overview-sort select { width: 100%; }
+  .overview-project-heading { flex-direction: column; align-items: stretch; gap: 8px; }
+  .overview-project { padding: 20px 0; }
+  .overview-service { align-items: flex-start; padding: 12px 0; }
+  .overview-service-info { gap: 5px 10px; }
+  .overview-service-name { min-width: 50px; max-width: 100%; }
+  .overview-duration { width: 100%; }
+  .overview-service-actions { gap: 8px; flex-direction: column-reverse; align-items: end; }
+  .overview-open { padding: 4px 0; }
+  .overview-service-actions .btn { min-height: 38px; }
+}
+@media (pointer: coarse) { .overview-filters button, .overview-service-actions .btn, .overview-open, .overview-service-name { min-height: 44px; } .overview-search input, .overview-sort select { font-size: 16px; } }

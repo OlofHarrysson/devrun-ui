@@ -1,5 +1,7 @@
 "use client";
 
+import { projectHref } from "../lib/overview";
+
 import { useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { HISTORY_LIMIT, devrunApi } from "../lib/devrunApi";
@@ -900,7 +902,7 @@ export function useDevrunApp(): DevrunAppModel {
   }
 
   async function removeProject(project: ProjectState): Promise<void> {
-    const shouldRemove = window.confirm(`Remove ${project.name} from Devrun list?`);
+    const shouldRemove = window.confirm(`Remove ${project.name} from Devrun? This requests stops for its services and removes saved configuration and history. Repository files are kept.`);
     if (!shouldRemove) {
       return;
     }
@@ -942,6 +944,7 @@ export function useDevrunApp(): DevrunAppModel {
       selection[project.id] = service.name;
     }
 
+    window.history.replaceState(window.history.state, "", projectHref(project.id, service?.name));
     setSelectedProjectId(project.id);
     setSelectedServiceByProject({
       ...snapshot.selectedServiceByProject,
@@ -991,6 +994,13 @@ export function useDevrunApp(): DevrunAppModel {
     let cancelled = false;
 
     void (async () => {
+      const query = new URLSearchParams(window.location.search);
+      const projectId = query.get("project");
+      const serviceName = query.get("service");
+      if (projectId) {
+        setSelectedProjectId(projectId);
+        if (serviceName) setSelectedServiceByProject({ ...getRuntimeSnapshot().selectedServiceByProject, [projectId]: serviceName });
+      }
       await refreshState();
       if (cancelled) {
         return;

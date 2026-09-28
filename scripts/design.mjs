@@ -54,7 +54,7 @@ async function capture(name) {
         });
         await page.routeWebSocket(/\/ws(?:\?|$)/, (socket) => socket.close());
         const logsReady = state === "stopped" ? page.waitForResponse((response) => new URL(response.url()).pathname === "/api/logs") : null;
-        await page.goto(`${baseURL}${state === "reference" ? "/design" : "/"}`);
+        await page.goto(`${baseURL}${state === "reference" ? "/design" : "/project"}`);
         if (state === "reference") {
           await page.getByRole("heading", { name: "A quieter place to keep things running." }).waitFor();
           await page.locator("#cmd-start-btn").focus();
@@ -134,7 +134,7 @@ async function review(before, after, target = "workspace", state = "stopped") {
   const html = await buildReview({ schemaVersion: 1, id: `devrun-${target}-${state}`, ...inputs,
     targets: Object.keys(viewports).map((id) => ({ id, label: id })),
     views: [{ id: target, label: before === after ? "Installation check — same snapshot" : `${before} → ${after}`,
-      liveUrl: `${baseURL}${target === "workspace" ? "/" : "/design"}`,
+      liveUrl: `${baseURL}${target === "workspace" ? "/project" : "/design"}`,
       captures: Object.fromEntries(Object.keys(viewports).map((id) => [id, { before: `${target}/${state}/${id}`, after: `${target}/${state}/${id}` }])) }],
   });
   const file = path.join(artifacts, `${checkedName(before)}-${checkedName(after)}-${checkedName(target)}-${checkedName(state)}.html`);

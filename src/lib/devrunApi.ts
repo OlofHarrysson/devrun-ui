@@ -29,8 +29,8 @@ async function request<T>(
 }
 
 export const devrunApi = {
-  state(): Promise<StateResponse> {
-    return request<StateResponse>("/api/state", undefined, "Failed to load state");
+  state(signal?: AbortSignal): Promise<StateResponse> {
+    return request<StateResponse>("/api/state", { signal }, "Failed to load state");
   },
 
   addProject(root: string, name?: string): Promise<unknown> {
@@ -128,6 +128,7 @@ export const devrunApi = {
     serviceName: string,
     afterSeq = 0,
     limit = HISTORY_LIMIT,
+    signal?: AbortSignal,
   ): Promise<HistoryResponse> {
     const query = new URLSearchParams({
       projectId,
@@ -138,7 +139,7 @@ export const devrunApi = {
 
     return request<HistoryResponse>(
       `/api/history?${query.toString()}`,
-      undefined,
+      { signal },
       "Failed to fetch history",
     );
   },

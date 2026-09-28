@@ -4,10 +4,40 @@
 
 Olof reports that Devrun primarily serves his agents in the background. His UI visits
 are mostly for stopping accumulated services and cleaning up projects, with occasional
-manual starts and little direct log reading. The next priority is the proposed recent
-project/running-service overview in [DESIGN.md](../DESIGN.md#dr-overview--proposed-not-implemented).
+manual starts and little direct log reading. The landing page now implements the recent
+project/running-service overview in [DESIGN.md](../DESIGN.md#dr-overview--implemented).
 [VISION.md](VISION.md) owns these current priorities. The delivered terminal workspace
-below remains useful for inspection; it is not the intended primary landing workflow.
+below remains useful for inspection; it now lives in project details.
+
+## Delivered overview
+
+The home page defaults to Running and Recently started. Longest running uses the
+oldest running service per project; each service keeps its own duration and action.
+All includes stopped projects. Project/service links open the existing workspace.
+Stop remains pending until state confirms it, then reports completion even when the
+row leaves Running. Failure and stale-state feedback are inline. No last-used or
+idle inference is made. Existing backend work was preserved without modification.
+
+Verification: 21 browser checks passed, including overview start/stop against an
+isolated temporary real service, detail lifecycle/log behavior, fixture failures,
+state changes initiated outside the UI, and 320–1440px widths. Frontend/backend
+TypeScript checks passed. A separate temporary history-store reload preserved a
+start timestamp; the shared daemon was not restarted. Desktop/mobile screenshots of
+the real six-running-service registry were inspected read-only. No user services were
+stopped; temporary test registration was removed. No production build was run.
+
+Review evidence: `artifacts/design/overview-before/` and `overview-final/` contain
+matching fixed-clock mixed-project page/detail captures. Fixtures establish layout
+and interaction, while the temporary real service establishes lifecycle integration.
+The overview snapshot is complete. Two broader detail/reference capture runs timed
+out during readiness waits and produced no passing manifest; their partial evidence
+is excluded from the comparison. The 21-test browser suite covers detail behavior.
+
+Tradeoff: logs and project removal now require entering project details. Unknown start
+times sort after known times. Retained history can recover missing stopped-service
+starts but is bounded; it cannot establish last use. The overview fetches no log output
+and opens no service terminal connections. The observed cleanup task justifies a list
+of service controls as the landing view rather than further terminal decoration.
 
 ## Delivered workspace
 

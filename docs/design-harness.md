@@ -27,7 +27,7 @@ and the existing Playwright Chromium installation are required. A production ser
 returns 404 for `/design`, so it is not a valid full design-validation target.
 
 `scripts/design.mjs` owns browser lifecycle, fixtures, assertions, selectors, and
-snapshot selection. Captures use the real `/` application with intercepted APIs
+snapshot selection. Workspace captures use the real `/project` application with intercepted APIs
 and blocked service WebSockets. Data is explicitly simulated; no mutation request
 is allowed through. The reference imports real components but has no network effects.
 No live process reliability is claimed by these checks.
@@ -39,6 +39,24 @@ Workspace width and height must fit the viewport; the reference must have no
 horizontal overflow. `npm run test:ui` additionally checks 33-project lists, long
 paths, 320/390/1024/1440px widths, lifecycle actions, history resizing, removal, and
 service switching. Its temporary real service validates streaming/start/stop/restart.
+
+Overview captures use `scripts/overview-evidence.mjs` with a fixed clock and mixed
+service ages. For a future comparison, retain the current overview with `after`
+before editing, then repeat under a new snapshot name after editing. The `before`
+mode targets the former terminal landing page and only applies before that migration.
+
+```sh
+node scripts/overview-evidence.mjs after overview-baseline
+node scripts/overview-evidence.mjs after overview-updated
+```
+
+Each snapshot includes original full-page and first-project detail evidence at desktop
+and mobile sizes. The migration baseline is `artifacts/design/overview-before/` and
+its accepted-for-review implementation is `artifacts/design/overview-final/`.
+`tests/overview.spec.ts` verifies sorting, filtering, saved-start recovery, no terminal
+connections, confirmed actions, inline failures, stale-state recovery, and responsive
+long content. The real service test also starts/stops from the overview before entering
+the existing detail reliability flow.
 
 ## Artifacts
 

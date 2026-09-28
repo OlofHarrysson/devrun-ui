@@ -43,7 +43,7 @@ async function mockWorkspace(page: Page, status = "stopped", count = 33) {
     socket.send(JSON.stringify({ type: "meta", runId: "run-web" }));
     socket.send(JSON.stringify({ type: "output", data: "Service ready\r\n" }));
   });
-  await page.goto("/");
+  await page.goto("/project");
   if (count) await expect(page.locator(".service-status")).toHaveText(status);
   return { actions, mutations };
 }

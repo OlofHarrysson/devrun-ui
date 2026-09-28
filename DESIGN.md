@@ -8,8 +8,8 @@ registrations; manual starts are secondary and reading logs is uncommon. Priorit
 a scannable overview and cleanup actions. Preserve the shared runtime contract and
 keep project/service output available as a detail view. Configuration stays agent-led.
 
-The current implementation remains a terminal workspace. DR-OVERVIEW below is a
-proposal for the next iteration, not a description of shipped behavior.
+The landing page is DR-OVERVIEW. DR-WORKSPACE remains available at `/project`
+for service inspection, logs, and secondary project removal.
 
 ## Direction and ownership
 
@@ -50,7 +50,7 @@ Olof approved this palette on 28 September 2026.
 
 ### DR-WORKSPACE — implemented
 
-- Owners: `src/app/page.tsx`, `src/components/{Sidebar,ProjectHeader,CommandBar,TerminalPanel,HistoryPanel}.tsx`.
+- Owners: `src/app/project/page.tsx`, `src/components/{Sidebar,ProjectHeader,CommandBar,TerminalPanel,HistoryPanel}.tsx`.
 - Bound the desktop shell to the viewport; project list and output scroll independently.
 - Use quiet project rows, readable names, search, and explicit ready/starting/error status.
 - Combine project identity and service actions into one compact workspace header.
@@ -65,19 +65,21 @@ Olof approved this palette on 28 September 2026.
   show Restart only while running. Disable controls while an action is pending.
 - Preserve service switching, logs, history, run identity, and all runtime API semantics.
 
-### DR-OVERVIEW — proposed, not implemented
+### DR-OVERVIEW — implemented
 
+- Owners: `src/app/page.tsx`, `src/hooks/useProjectOverview.ts`, `src/lib/overview.ts`.
 - Landing view: quiet project rows showing name, named running services, last start,
   running duration, and contextual Start/Stop/Open app actions. Open project detail
   for terminal output and history; do not load every terminal just to review projects.
-- Offer All / Running independently from sort order. Recommend Running with recent
+- Offer All / Running independently from sort order. Default to Running with recent
   starts first on initial entry, with longest-running first available for cleanup.
   Keep a stable tie-break and preserve selection during refreshes.
 - Project recency means its most recent service start, including agent starts.
   Within a project show duration per service; a longest-running project sort uses
   its oldest currently running service, not the most recently restarted one.
-- Current runtime types expose startedAt. Validate history/persistence across daemon
-  restarts before implementation; show unknown when timestamps cannot be recovered.
+- Read startedAt from runtime state. For stopped services with missing timestamps,
+  recover the latest retained start event through history (cached by service/run).
+  History-store reload was verified; show unknown when retained history has no start.
   Never equate a creation date, quiet logs, or a long run with last use or inactivity.
 - Allow stopping a named running service directly from the overview. Keep the row
   pending until confirmed, surface failures inline, and handle rows leaving Running
@@ -86,7 +88,7 @@ Olof approved this palette on 28 September 2026.
   configuration, and history effects without suggesting repository deletion.
 - Retain the approved palette and adapt rows for mobile. No new dashboard metrics,
   automatic shutdown, or bulk controls in the first pass.
-- Acceptance: use a large registry with multiple services per project, mixed run
+- Validation: use a large registry with multiple services per project, mixed run
   ages, stopped projects, unknown timestamps, and agent-initiated changes. Verify
   sorting/filtering, stopping the intended service, later restart with intact config,
   failures/stale data, keyboard access, and desktop/mobile layout.

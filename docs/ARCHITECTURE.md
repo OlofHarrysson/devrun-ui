@@ -5,7 +5,7 @@ This document explains how the current MVP is structured in code so contributors
 ## High-Level Shape
 
 Devrun is one local app with two halves:
-- a Next.js UI for project/service selection, terminal viewing, and controls
+- a Next.js UI with a project cleanup overview at `/` and terminal details at `/project`
 - an Express/WebSocket backend that owns process lifecycle, persistence, and runtime state
 
 The UI and backend speak through the same local API surface that AI operators can also use.
@@ -54,6 +54,18 @@ The backend stores local state in `.devrun/` through a few small modules:
 These modules keep file I/O simple and synchronous because this is a local-first single-user MVP.
 
 ## Frontend Runtime
+
+### Overview and project routes
+
+`src/app/page.tsx` uses `useProjectOverview` for state polling, bounded history reads
+when stopped-service timestamps are missing, and confirmed Start/Stop actions. It
+opens no service WebSockets or log streams. Missing historical start events remain
+unknown. State failures retain visibly stale data and disable process actions.
+
+`src/lib/overview.ts` owns recency/duration formatting, stable sorting inputs, and
+project/service detail URLs. `/project?project=<id>&service=<name>` initializes the
+existing workspace selection; the normal persisted selection applies without a link.
+The detail page owns `useDevrunApp`, so entering the overview disposes its terminals.
 
 ### `src/hooks/useDevrunApp.ts`
 

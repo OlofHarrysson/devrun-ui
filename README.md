@@ -91,23 +91,25 @@ npm run dev
 Agents register and configure projects, run services, and read logs through the API;
 the browser does not need to stay open. See the operator recipes below.
 
-For an occasional visit to the current UI:
+For an occasional visit:
 
-1. Find a project with sidebar search, or the mobile project chooser. Project rows
-   show running counts and status.
-2. Select a running service and press Stop when you no longer need it. Repeat for
-   other running services in that project. Stopping keeps configuration for later.
+1. The landing page defaults to Running projects, ordered by most recent service
+   start. Choose Longest running to surface projects with the oldest running service.
+   All includes stopped projects; search matches names and paths.
+2. Read each service's running duration and press Stop for the service you no longer
+   need. It stays pending until state confirms the change. Configuration is kept.
 3. Use Start for a stopped service, or Open app when it is ready with a verified URL.
-4. Use the project menu to remove an unwanted registration after confirmation.
-   Removal also requests stops for configured services and removes saved service
-   configuration and history; repository files remain untouched.
-5. When investigation is needed, open the terminal, History, or Details. Agents
-   normally perform this work through the APIs.
+4. Click a project or service name to open its detail workspace at `/project`, with
+   output, History, Details, and secondary project removal. All projects returns home.
+5. Removal requests stops for configured services and removes registration, saved
+   service configuration, and history. Repository files remain untouched.
 
-The planned recent-project overview, Running filter, and duration-based cleanup
-controls are not implemented yet. [Product direction](docs/VISION.md) and
-[design intent](DESIGN.md) define that next step. Manual Add/Configure forms are
-intentionally absent.
+Last started describes a service start, not last use. Missing stopped-service times
+are recovered from retained history when possible; otherwise the UI says Start time
+unknown. No inactivity detection or automatic shutdown is performed. If state cannot
+refresh, cached data is marked stale and process controls are disabled until recovery.
+The overview does not connect service terminals or fetch logs. Manual Add/Configure
+forms are intentionally absent.
 
 ## UI stack
 
@@ -122,7 +124,7 @@ intentionally absent.
 - Tailwind/daisy primitives in `src/styles/main.css`
 - Approved palette and local DM Sans in `src/styles/olof-theme.css`
 - Responsive workspace and component styling in `src/styles/workspace.css`
-- Desktop uses a bounded workspace with independently scrolling projects/output; mobile uses a project chooser.
+- The landing overview supports desktop/mobile project cleanup; `/project` retains the bounded terminal workspace.
 - [Design intent](DESIGN.md), [capture workflow](docs/design-harness.md), and development reference at `/design`.
 
 ## Project config (simple mode)

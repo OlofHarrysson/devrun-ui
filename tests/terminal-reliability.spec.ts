@@ -132,6 +132,13 @@ test.afterAll(async () => {
 
 test("terminal reconnect + stopped logs behavior", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /^All \(/ }).click();
+  await page.getByLabel("Search projects", { exact: true }).fill(PROJECT_NAME);
+  await page.getByRole("button", { name: `Start ${PROJECT_NAME} ${SERVICE_NAME}`, exact: true }).click();
+  await expect(page.getByRole("button", { name: `Stop ${PROJECT_NAME} ${SERVICE_NAME}`, exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: `Stop ${PROJECT_NAME} ${SERVICE_NAME}`, exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("stopped. Configuration kept");
+  await page.getByRole("link", { name: PROJECT_NAME, exact: true }).click();
 
   const projectItem = page.locator(".project-item", { hasText: PROJECT_NAME }).first();
   await expect(projectItem).toBeVisible();

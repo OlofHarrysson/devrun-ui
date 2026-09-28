@@ -8,7 +8,7 @@ Agents use Devrun in the background for setup, process control, and debugging.
 Olof rarely opens the UI; he mainly stops accumulated services that consume resources
 and battery, removes unwanted registrations, and occasionally starts recent projects.
 Prioritize this cleanup workflow over terminal polish. Run age is not proof of inactivity.
-See `docs/VISION.md` for priorities and `DESIGN.md` for proposed versus implemented UX.
+See `docs/VISION.md` for priorities and `DESIGN.md` for implemented UX and acceptance criteria.
 
 ## Project Structure & Module Organization
 - `src/app/`: Next.js App Router entry files (`layout.tsx`, `page.tsx`).
@@ -24,7 +24,7 @@ See `docs/VISION.md` for priorities and `DESIGN.md` for proposed versus implemen
 - `docs/USER-GUIDE.md`: first-time user walkthrough of the UI and service model.
 - `docs/ARCHITECTURE.md`: code-level structure, runtime flow, and main ownership boundaries.
 - `docs/VISION.md`: stable product direction and scope guardrails.
-- `DESIGN.md`: implemented design and proposed overview specifications.
+- `DESIGN.md`: overview and project-detail specifications.
 - `AGENTS.md` (this file): contributor and implementation workflow conventions.
 
 ## Build, Test, and Development Commands

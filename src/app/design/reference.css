@@ -1,0 +1,42 @@
+.design-reference { min-height: 100vh; -webkit-font-smoothing: antialiased; }
+.design-reference .reference-header { max-width: 1120px; margin: auto; padding: 26px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.design-reference .reference-brand { font-size: 21px; font-weight: 650; letter-spacing: -0.04em; }
+.design-reference nav { display: flex; gap: 24px; font-size: 14px; color: var(--color-copy); }
+.design-reference a:hover { color: var(--color-action); }
+.design-reference .btn-primary:hover { color: var(--color-on-action); }
+.design-reference .reference-content { max-width: 1120px; margin: auto; padding: 28px 32px 80px; }
+.design-reference section { scroll-margin-top: 24px; margin-bottom: 64px; }
+.design-reference .reference-intro { padding: 28px 0 24px; }
+.design-reference h1 { font-size: clamp(34px, 4.4vw, 56px); line-height: 1.09; letter-spacing: -0.04em; font-weight: 550; }
+.design-reference h2 { font-size: 24px; line-height: 1.25; letter-spacing: -0.025em; font-weight: 550; }
+.design-reference h3 { font-size: 21px; font-weight: 500; }
+.design-reference p { margin: 14px 0 24px; max-width: 72ch; font-size: 15px; line-height: 1.7; color: var(--color-copy); }
+.design-reference .reference-intro p { max-width: 58ch; font-size: 18px; }
+.design-reference .reference-note { color: var(--color-muted); font-size: 13px; }
+.design-reference .reference-intro .reference-note { display: inline-block; margin: 16px; }
+.design-reference .palette { display: grid; grid-template-columns: repeat(5, 1fr); gap: 24px 18px; }
+.design-reference .swatch { display: block; height: 48px; border: 1px solid var(--color-rule); border-radius: 8px; margin-bottom: 10px; }
+.design-reference .palette strong { display: block; font-size: 13px; font-weight: 500; }
+.design-reference code { font-family: "SFMono-Regular", Consolas, monospace; }
+.design-reference .palette code { display: block; font-size: 10px; color: var(--color-muted); overflow-wrap: anywhere; }
+.design-reference .type-samples { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 36px; }
+.design-reference .type-samples code { font-size: 14px; line-height: 1.8; }
+.design-reference .type-samples code span { color: var(--color-status-success); }
+.design-reference .section-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 18px; align-items: center; }
+.design-reference label { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.design-reference select { width: auto; }
+.design-reference #component-demo { padding: 20px; border-radius: 12px; display: grid; gap: 18px; background: var(--color-base-200); color: var(--color-base-content); }
+.design-reference #history-panel { min-height: 160px; }
+.design-reference .demo-feedback { margin: 16px 0 4px; font-size: 13px; color: var(--color-muted); }
+.design-reference .direction-list { margin: 24px 0; padding: 0; list-style: none; display: grid; gap: 24px; }
+.design-reference .direction-list strong { display: block; font-weight: 550; margin-bottom: 4px; }
+.design-reference .direction-list span { display: block; max-width: 78ch; color: var(--color-copy); font-size: 14px; line-height: 1.6; }
+@media (max-width: 600px) {
+  .design-reference .reference-header { padding: 20px; gap: 16px; }
+  .design-reference nav { gap: 14px; font-size: 12px; }
+  .design-reference .reference-content { padding: 12px 20px 40px; }
+  .design-reference .palette { grid-template-columns: repeat(2, 1fr); }
+  .design-reference .type-samples { grid-template-columns: 1fr; gap: 8px; }
+  .design-reference #component-demo { padding: 8px; }
+  .design-reference .reference-intro .reference-note { margin-left: 0; display: block; }
+}

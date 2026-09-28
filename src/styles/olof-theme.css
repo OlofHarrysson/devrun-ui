@@ -1,0 +1,68 @@
+/* Palette adapted from madebyolof/src/styles/global.css, 2026-09-28.
+   Scoped to the reference until the workspace redesign is reviewed. */
+@font-face {
+  font-family: "DM Sans Variable";
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url("/fonts/dm-sans-latin-wght-normal.woff2") format("woff2");
+}
+
+[data-theme="olof"] {
+  color-scheme: dark;
+  --color-canvas: #101114;
+  --color-surface: #1c1e23;
+  --color-surface-hover: #282b31;
+  --color-ink: #f2f3f5;
+  --color-copy: #c5c8ce;
+  --color-muted: #a1a7b0;
+  --color-action: #f6b743;
+  --color-action-hover: #ffca6a;
+  --color-on-action: #221609;
+  --color-rule: #363a42;
+  --color-status-success: #9ad5bd;
+  --color-status-warning: #e6c58a;
+  --color-status-error: #efaaa3;
+  --color-base-100: var(--color-canvas);
+  --color-base-200: var(--color-surface);
+  --color-base-300: var(--color-surface-hover);
+  --color-base-content: var(--color-ink);
+  --color-primary: var(--color-action);
+  --color-primary-content: var(--color-on-action);
+  --color-secondary: var(--color-copy);
+  --color-secondary-content: var(--color-canvas);
+  --color-accent: var(--color-action);
+  --color-accent-content: var(--color-on-action);
+  --color-neutral: var(--color-surface);
+  --color-neutral-content: var(--color-ink);
+  --color-info: var(--color-action);
+  --color-info-content: var(--color-on-action);
+  --color-success: var(--color-status-success);
+  --color-success-content: var(--color-on-action);
+  --color-warning: var(--color-status-warning);
+  --color-warning-content: var(--color-on-action);
+  --color-error: var(--color-status-error);
+  --color-error-content: var(--color-on-action);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --depth: 0;
+  --noise: 0;
+  font-family: "DM Sans Variable", system-ui, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+[data-theme="olof"] :is(button, a, select, input):focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 3px;
+}
+[data-theme="olof"] .btn-primary:hover {
+  background: var(--color-action-hover);
+  border-color: var(--color-action-hover);
+}
+
+[data-theme="olof"] .badge-neutral.badge-soft {
+  color: var(--color-muted);
+  background: var(--color-surface);
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "adapterApi": 1,
+  "evidenceSchema": 1,
+  "platforms": {
+    "browser": {
+      "capture": true,
+      "geometry": true,
+      "coordinates": "viewport-relative CSS pixels",
+      "measurementSource": "browser DOM",
+      "tokens": true
+    }
+  },
+  "migrationNotes": "Additive optional tokens module: inspectTokens(page, declaration), target.tokens and --mode=tokens, and tokens JSON/Markdown evidence. Existing capture/geometry APIs, defaults without declarations, and status meanings are unchanged. Consumers opting into tokens must handle the new evidence kind and supply local declarations. Existing installations are not automatically enrolled. The token module also exports synchronous browser-only inspectDocumentTokens(declaration) for live workbenches; the existing page API and report schema remain unchanged. Optional review module is now installable: Node-only buildReview/writeReview and builder CLI consume indexed schema-1 PNG captures with review configuration schema 1. No existing adapter or evidence changes. Existing selections are unchanged; use a dedicated review installation when adding it beside an existing installation. Keep review configuration and evidence local; validate by building with the installed copy. Page-level review inputs are now supported as before/after records maps: update the writer too and recapture to obtain additive record-relative artifacts.png. Existing png values and evidence schema remain unchanged; direct records retain capture/geometry/tokens kinds. Consumer suites select successful attempts and publish review configurations only after assertions pass. Optional style-usage module adds inspectStyleUsage/writeStyleUsage and a standalone JSON-config CLI for CSS/source reports (styleUsageSchema 1). It requires consumer-owned @projectwallace/css-analyzer 9.9.3 and css-tree 3.2.1 dependencies, but no browser. Existing module selections, browser API and evidence schema are unchanged. Use a separate dedicated destination to add it alongside an existing installation; preview and validate locally. Style usage now prioritizes application choices in Markdown while retaining the complete inventory and JSON. Optional developmentSources marks a subset of sources; additive scope fields separate development findings and repeated groups. No existing configuration or browser adapter changes are required. Review views may omit liveUrl or set null for desktop applications; the live-page link is hidden. Supplied URLs retain existing HTTP(S) validation. This additive change needs no adapter migration for existing web consumers.",
+  "styleUsageSchema": 1
+}

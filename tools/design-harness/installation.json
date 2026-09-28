@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "30cf1edc9384b83eb2fdb4bd56f47759018109bc",
+  "modules": [
+    "capture",
+    "geometry",
+    "review",
+    "workflow"
+  ],
+  "files": {
+    "bin/design-harness.mjs": "de2d17830bc31af91db3e3784ffdfa134d4b6aebe10ea73987f6e83ff499893b",
+    "compatibility.json": "fba2ed9a1a7c94ae25ec21c6c9d9399253c8cd76d3abacc6949244fb885c86fc",
+    "package.json": "137091b18c92d6c74e472325b92e4c29ede03d63c974451d9701d4de20ade8de",
+    "modules/capture/index.mjs": "fab3765dc09680803e83cbf5984c9ec9fbc76f2afb36551242e50dab71782513",
+    "modules/core/browser.mjs": "3ed2e8228cd96e0692e7f92fee5b648d23069eb4583a16348c9d846db12d2104",
+    "modules/core/evidence.d.mts": "95b5715a3f8a41355614cc52fd6cebc15d4fd0e17edd4d56e3578b3ad5ab1fe7",
+    "modules/core/evidence.mjs": "19092d1376d3c2e3f8fc319b00a27f20518f3a07e2825b9fe74d636de1358577",
+    "modules/core/plan.mjs": "9c71e25570cdcbd96fc534e56127967bd2fe1dbdae3055e426f4c17f807af3cf",
+    "modules/core/run.mjs": "1866fe9d74ed67af626e976442c090d5d60f826d165dc12548b47726bf679608",
+    "modules/core/source.mjs": "5874d4172240085c65b6069c8a7aa599443b9558b80d65281e1c29a52c4609bc",
+    "modules/geometry/collect.mjs": "461bfb95618cd1d9e88d1e0e5ba9e94775b1b66c340e706dd6a8c873813c19f7",
+    "modules/geometry/observe.d.mts": "4f48df5c7718a22e67a8e56b52e914af1c64f6d0e9b0480deffbfaea5f686169",
+    "modules/geometry/observe.mjs": "88d4b77499c9b7af953968a7206b7b6c648800b11407b2e54c15e6e142a2f5d2",
+    "modules/geometry/report.mjs": "3509ac8ae379293f781c41135b60aeaf212c84906667664a3629519a5f68ba77",
+    "modules/review/README.md": "21beef96d7075485dcf47537094d7ca74db96757151e2887df4a2e31da1c7ba2",
+    "modules/review/build.mjs": "adf241499185900c7db15c785a5c779cd562df62b4b38ff2b1d063acbb5ac952",
+    "modules/review/template.html": "b232665bf346393c1b30168e0207e12b66b047c78ea11786966233262290aadc",
+    "modules/workflow/README.md": "4ee5bb625d720b05d5fe200b8d9b7b8184d81193355a0111cc211e0b2330cb80",
+    "modules/workflow/design-foundations.md": "83dded7c8a76aa8e39e3186842dee0eab2ed6d1e53c329457d39d7b86c0f2715",
+    "modules/workflow/design-reference.md": "1ecd2ee87651a4fdaff9ffe708b978751f6e14d72eb52cc2ac5da975e7ff4005"
+  },
+  "validatedRevision": "30cf1edc9384b83eb2fdb4bd56f47759018109bc",
+  "validation": {
+    "status": "passed",
+    "command": [
+      "npm",
+      "run",
+      "design:validate"
+    ],
+    "cwd": "/Users/olof/git/codex-projects/devrun-ui",
+    "exitCode": 0
+  }
+}

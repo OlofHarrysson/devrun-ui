@@ -5,3 +5,5 @@ dist
 .devrun
 test-results
 playwright-report
+artifacts/design/
+*.tsbuildinfo

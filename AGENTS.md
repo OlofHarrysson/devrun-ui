@@ -62,3 +62,14 @@ The second problem is that AIs and humans can't share one terminal and that it's
 - This project is local-first MVP tooling and currently has no auth layer.
 - Do not expose it beyond localhost without adding authentication and access controls.
 - Do not commit secrets in service commands, config, or captured logs.
+
+## Design work
+
+Read [DESIGN.md](DESIGN.md) and the installed
+[Harness workflow](tools/design-harness/modules/workflow/README.md) for UI work.
+[Local integration](docs/design-harness.md) owns capture/review commands, fixtures,
+and the development-only `/design` reference. [Initial review](docs/design-review.md)
+records the next priorities. Keep managed Harness files unchanged; update them with
+the source installer. Before changing existing UI, retain matching desktop/mobile
+captures, then present before/after evidence using the installed review tool with
+both detail and page context. Measurements inform review; they do not approve taste.

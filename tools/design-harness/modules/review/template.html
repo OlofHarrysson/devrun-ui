@@ -1,0 +1,157 @@
+<div id="__ROOT_ID__">
+  <div class="viz-controls">
+    <label class="form-label" data-target-label>Target
+      <select class="form-select" data-target aria-label="Target"></select>
+    </label>
+    <label class="form-label" data-view-label>View
+      <select class="form-select" data-view aria-label="View"></select>
+    </label>
+  </div>
+  <div class="viz-row" role="group" aria-label="Comparison">
+    <button class="btn" type="button" data-version="before" aria-pressed="false">Before</button>
+    <button class="btn" type="button" data-version="after" aria-pressed="false">After</button>
+    <button class="btn" type="button" data-version="both" aria-pressed="true">Side by side</button>
+  </div>
+  <div class="review-images">
+    <figure data-panel="before"><figcaption>Before</figcaption><div class="review-viewport"><img alt="" draggable="false"></div></figure>
+    <figure data-panel="after"><figcaption>After</figcaption><div class="review-viewport"><img alt="" draggable="false"></div></figure>
+  </div>
+  <div class="viz-row text-small">
+    <span data-caption aria-live="polite"></span>
+    <a data-live target="_blank" rel="noopener">Open live page ↗</a>
+  </div>
+</div>
+<style>
+  #__ROOT_ID__ .review-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 16px; margin: 20px 0 12px; align-items: start; }
+  #__ROOT_ID__ figure { margin: 0; min-width: 0; }
+  #__ROOT_ID__ [hidden] { display: none; }
+  #__ROOT_ID__ figcaption { margin-bottom: 8px; color: var(--muted-foreground); }
+  #__ROOT_ID__ .review-viewport { overflow: hidden; margin-inline: auto; }
+  #__ROOT_ID__ img { display: block; width: 100%; height: auto; transform-origin: 0 0; }
+</style>
+<script type="application/json" id="__ROOT_ID__-data">__REVIEW_DATA__</script>
+<script>
+(() => {
+  const root = document.getElementById('__ROOT_ID__');
+  const data = JSON.parse(document.getElementById('__ROOT_ID__-data').textContent);
+  const target = root.querySelector('[data-target]');
+  const view = root.querySelector('[data-view]');
+  const buttons = [...root.querySelectorAll('[data-version]')];
+  for (const [select, items, label] of [[target, data.targets, 'target'], [view, data.views, 'view']]) {
+    for (const item of items) {
+      const option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = item.label;
+      select.append(option);
+    }
+    root.querySelector(`[data-${label}-label]`).hidden = items.length === 1;
+  }
+  const defaults = { target: data.targets[0].id, view: data.views[0].id, version: 'both' };
+  let state = { ...defaults };
+  const viewports = [...root.querySelectorAll('.review-viewport')];
+  const camera = { scale: 1, x: 0, y: 0 };
+  let gestureStart = null;
+  function paintZoom() {
+    for (const viewport of viewports) {
+      viewport.querySelector('img').style.transform = `translate(${camera.x * 100}%, ${camera.y * 100}%) scale(${camera.scale})`;
+    }
+  }
+  function resetZoom() {
+    Object.assign(camera, { scale: 1, x: 0, y: 0 });
+    gestureStart = null;
+    paintZoom();
+  }
+  function zoomAt(viewport, value, clientX, clientY) {
+    const bounds = viewport.getBoundingClientRect();
+    if (!bounds.width || !bounds.height || !Number.isFinite(value)) return;
+    const scale = Math.min(8, Math.max(1, value));
+    const ratio = scale / camera.scale;
+    const x = Number.isFinite(clientX) ? (clientX - bounds.left) / bounds.width : 0.5;
+    const y = Number.isFinite(clientY) ? (clientY - bounds.top) / bounds.height : 0.5;
+    camera.x = Math.min(0, Math.max(1 - scale, x - (x - camera.x) * ratio));
+    camera.y = Math.min(0, Math.max(1 - scale, y - (y - camera.y) * ratio));
+    camera.scale = scale;
+    paintZoom();
+  }
+  for (const viewport of viewports) {
+    viewport.addEventListener('wheel', event => {
+      const bounds = viewport.getBoundingClientRect();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.height : 1;
+      if (event.ctrlKey) {
+        event.preventDefault();
+        // Some WebKit hosts emit both event families for one pinch.
+        if (gestureStart === null) zoomAt(viewport, camera.scale * Math.exp(Math.max(-4, Math.min(4, -event.deltaY * unit * 0.005))), event.clientX, event.clientY);
+      } else if (camera.scale > 1 && bounds.width && bounds.height) {
+        const x = Math.min(0, Math.max(1 - camera.scale, camera.x - event.deltaX * unit / bounds.width));
+        const y = Math.min(0, Math.max(1 - camera.scale, camera.y - event.deltaY * unit / bounds.height));
+        if (x !== camera.x || y !== camera.y) {
+          event.preventDefault();
+          Object.assign(camera, { x, y });
+          paintZoom();
+        }
+      }
+    }, { passive: false });
+    viewport.addEventListener('gesturestart', event => {
+      event.preventDefault();
+      gestureStart = camera.scale;
+    }, { passive: false });
+    viewport.addEventListener('gesturechange', event => {
+      if (gestureStart === null) return;
+      event.preventDefault();
+      zoomAt(viewport, gestureStart * event.scale, event.clientX, event.clientY);
+    }, { passive: false });
+    viewport.addEventListener('gestureend', event => {
+      event.preventDefault();
+      gestureStart = null;
+    }, { passive: false });
+  }
+  function render() {
+    resetZoom();
+    target.value = state.target;
+    view.value = state.view;
+    const selected = data.views.find(item => item.id === state.view);
+    const targetLabel = data.targets.find(item => item.id === state.target).label;
+    const pair = selected.pairs[state.target];
+    const commonWidth = Math.max(data.assets[pair.before].width, data.assets[pair.after].width);
+    buttons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.version === state.version)));
+    for (const version of ['before', 'after']) {
+      const panel = root.querySelector(`[data-panel="${version}"]`);
+      panel.hidden = state.version !== 'both' && state.version !== version;
+      const image = panel.querySelector('img');
+      const asset = data.assets[pair[version]];
+      image.src = asset.src;
+      const viewport = panel.querySelector('.review-viewport');
+      viewport.style.width = `${100 * asset.width / commonWidth}%`;
+      viewport.style.maxWidth = `${asset.width}px`;
+      image.alt = `${version === 'before' ? 'Before' : 'After'}: ${selected.label}, ${targetLabel}. Captured interface.`;
+    }
+    const viewport = data.assets[pair.after].viewport;
+    root.querySelector('[data-caption]').textContent = `${viewport.width} × ${viewport.height} viewport · ${selected.label} capture`;
+    const live = root.querySelector('[data-live]');
+    live.hidden = !selected.liveUrl;
+    if (selected.liveUrl) live.href = selected.liveUrl;
+    else live.removeAttribute('href');
+  }
+  function restore(saved) {
+    const candidate = saved?.modelContent;
+    if (candidate?.review !== data.id) return;
+    state = {
+      target: data.targets.some(item => item.id === candidate.target) ? candidate.target : defaults.target,
+      view: data.views.some(item => item.id === candidate.view) ? candidate.view : defaults.view,
+      version: ['before', 'after', 'both'].includes(candidate.version) ? candidate.version : defaults.version,
+    };
+    render();
+  }
+  function change(patch) {
+    state = { ...state, ...patch };
+    render();
+    window.openai?.setWidgetState?.({ modelContent: { review: data.id, ...state }, privateContent: null }).catch(() => {});
+  }
+  target.addEventListener('change', () => change({ target: target.value }));
+  view.addEventListener('change', () => change({ view: view.value }));
+  buttons.forEach(button => button.addEventListener('click', () => change({ version: button.dataset.version })));
+  window.addEventListener('openai:set_globals', event => restore(event.detail?.globals?.widgetState));
+  render();
+  restore(window.openai?.widgetState);
+})();
+</script>
